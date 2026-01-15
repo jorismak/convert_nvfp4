@@ -153,24 +153,259 @@ QWEN_IMAGE_EDIT_PRESET_CONFIG = {
     ],
 }
 
+# =============================================================================
+# Unsloth-derived presets (based on GGUF quantization analysis)
+# =============================================================================
+
+# Unsloth Qwen Image Edit 2511 preset - derived from Q4_K_M GGUF analysis
+# Skip patterns based on layers that Unsloth kept at Q6_K or higher precision
+# Layers at Q4_K/Q5_K will be quantized to NVFP4, Q6_K+ kept at FP16 (or FP8 with --use-fp8)
+#
+# GGUF analysis summary:
+#   Q4_K (560 tensors): Most Q/K/out projections, mlp.net.0, mods for blocks 2-57
+#   Q5_K (20 tensors): Block 1 and 58 (transition blocks)
+#   Q6_K (258 tensors): All V projections, mlp.net.2, entire blocks 0 and 59
+#   Q8_0 (2 tensors): Block 0 and 59 img_mod
+#   BF16 (6 tensors): img_in, txt_in, proj_out, norm_out, timestep_embed
+#
+# With --use-fp8: Q6_K and Q8_0 layers become FP8 instead of FP16
+
+# Patterns for layers that MUST stay at FP16 (BF16 in GGUF - I/O layers)
+UNSLOTH_QWEN_IMAGE_EDIT_2511_SKIP_PATTERNS = [
+    r"^img_in\b",  # Image input projection
+    r"^txt_in\b",  # Text input projection
+    r"^proj_out\b",  # Final output projection
+    r"^norm_out\b",  # Output normalization
+    r"^time_text_embed\.",  # Timestep embeddings
+]
+
+# Patterns for layers that can be FP8 (Q6_K/Q8_0 in GGUF)
+# Without --use-fp8, these are also skipped (kept at FP16)
+UNSLOTH_QWEN_IMAGE_EDIT_2511_FP8_PATTERNS = [
+    # === First block (block 0) - all weights were Q6_K/Q8_0 ===
+    r"^transformer_blocks\.0\.",
+    # === Last block (block 59) - all weights were Q6_K/Q8_0 ===
+    r"^transformer_blocks\.59\.",
+    # === V projections - ALL blocks kept at Q6_K ===
+    r"\.attn\.to_v\b",  # Image V projection
+    r"\.attn\.add_v_proj\b",  # Text V projection
+    # === MLP down projections - ALL blocks kept at Q6_K ===
+    r"\.img_mlp\.net\.2\b",  # Image MLP down projection
+    r"\.txt_mlp\.net\.2\b",  # Text MLP down projection
+]
+
+UNSLOTH_QWEN_IMAGE_EDIT_2511_CONFIG = {
+    "name": "unsloth-qwen-image-edit-2511",
+    "type": "static",  # Static preset - hardcoded patterns, not dynamic
+    "description": (
+        "Derived from Unsloth's Q4_K_M quantization. "
+        "Skips V projections, MLP down projections, first/last blocks, and I/O layers."
+    ),
+    "skip_patterns": UNSLOTH_QWEN_IMAGE_EDIT_2511_SKIP_PATTERNS,
+    "fp8_patterns": UNSLOTH_QWEN_IMAGE_EDIT_2511_FP8_PATTERNS,
+}
+
+# Unsloth Qwen Image 2512 preset - derived from Q5_K_S GGUF analysis
+# Skip patterns based on layers that Unsloth kept at Q6_K or higher precision
+# Layers at Q5_K will be quantized to NVFP4, Q6_K+ kept at FP16 (or FP8 with --use-fp8)
+#
+# GGUF analysis summary:
+#   Q5_K (784 tensors): All layers in blocks 2-57
+#   Q6_K (56 tensors): Entire blocks 0, 1, 58, 59 (first 2 + last 2)
+#   BF16 (6 tensors): img_in, txt_in, proj_out, norm_out, timestep_embed
+#
+# With --use-fp8: Q6_K layers (blocks 0,1,58,59) become FP8 instead of FP16
+
+# Patterns for layers that MUST stay at FP16 (BF16 in GGUF - I/O layers)
+UNSLOTH_QWEN_IMAGE_2512_SKIP_PATTERNS = [
+    r"^img_in\b",  # Image input projection
+    r"^txt_in\b",  # Text input projection
+    r"^proj_out\b",  # Final output projection
+    r"^norm_out\b",  # Output normalization
+    r"^time_text_embed\.",  # Timestep embeddings
+]
+
+# Patterns for layers that can be FP8 (Q6_K in GGUF)
+# Without --use-fp8, these are also skipped (kept at FP16)
+UNSLOTH_QWEN_IMAGE_2512_FP8_PATTERNS = [
+    # === First 2 blocks (blocks 0, 1) - all weights were Q6_K ===
+    r"^transformer_blocks\.0\.",
+    r"^transformer_blocks\.1\.",
+    # === Last 2 blocks (blocks 58, 59) - all weights were Q6_K ===
+    r"^transformer_blocks\.58\.",
+    r"^transformer_blocks\.59\.",
+]
+
+UNSLOTH_QWEN_IMAGE_2512_CONFIG = {
+    "name": "unsloth-qwen-image-2512",
+    "type": "static",  # Static preset - hardcoded patterns, not dynamic
+    "description": (
+        "Derived from Unsloth's Q5_K_S quantization. "
+        "Skips first/last 2 blocks and I/O layers."
+    ),
+    "skip_patterns": UNSLOTH_QWEN_IMAGE_2512_SKIP_PATTERNS,
+    "fp8_patterns": UNSLOTH_QWEN_IMAGE_2512_FP8_PATTERNS,
+}
+
+# Unsloth Wan preset - derived from Q5_K_M GGUF analysis
+# Skip patterns based on layers that Unsloth kept at Q6_K or higher precision
+# Layers at Q5_K will be quantized to NVFP4, Q6_K+ kept at FP16 (or FP8 with --use-fp8)
+#
+# GGUF analysis summary (identical pattern across all Wan models):
+#   14B (40 blocks): Q5_K=280, Q6_K=120
+#   5B (30 blocks):  Q5_K=210, Q6_K=90
+#   Pattern: 7 tensors/block quantized, 3 tensors/block skipped
+#
+#   Q5_K: Q, K, O projections + ffn.0 (up proj) for all blocks
+#   Q6_K: V projections (self_attn.v, cross_attn.v) + ffn.2 (down proj) for all blocks
+#   F16: All biases, norms, modulation (1D tensors)
+#   F32: patch_embedding.weight (Conv3d)
+#
+# With --use-fp8: Q6_K layers (V proj, ffn.2) become FP8 instead of FP16
+# Works for ALL Wan models: 2.1, 2.2, 5B, 14B, T2V, I2V, TI2V, MAGREF, etc.
+
+# Patterns for layers that MUST stay at FP16 (F16/F32 in GGUF)
+# For Wan, all the F16 layers are biases/norms (1D) which we don't quantize anyway
+# So no explicit skip patterns needed - they're handled by is_linear_weight check
+UNSLOTH_WAN_SKIP_PATTERNS = []
+
+# Patterns for layers that can be FP8 (Q6_K in GGUF)
+# Without --use-fp8, these are also skipped (kept at FP16)
+UNSLOTH_WAN_FP8_PATTERNS = [
+    # === V projections - ALL blocks kept at Q6_K ===
+    r"\.self_attn\.v\b",  # Self-attention V projection
+    r"\.cross_attn\.v\b",  # Cross-attention V projection
+    # === FFN down projections - ALL blocks kept at Q6_K ===
+    r"\.ffn\.2\b",  # FFN down projection (ffn.2.weight)
+]
+
+UNSLOTH_WAN_CONFIG = {
+    "name": "unsloth-wan",
+    "type": "static",  # Static preset - hardcoded patterns, not dynamic
+    "description": (
+        "Derived from Unsloth's Q5_K_M quantization for Wan models. "
+        "Skips V projections and FFN down projections. Works for all Wan variants."
+    ),
+    "skip_patterns": UNSLOTH_WAN_SKIP_PATTERNS,
+    "fp8_patterns": UNSLOTH_WAN_FP8_PATTERNS,
+}
+
+# =============================================================================
+# Smart Preset - Auto-detects model architecture and applies Unsloth-like rules
+# =============================================================================
+
+# The "smart" preset learns from Unsloth's quantization patterns:
+# 1. V projections (value in attention) → FP8 (they aggregate info, sensitive to precision)
+# 2. Down projections (gate before residual) → FP8 (final bottleneck, quality-critical)
+# 3. I/O layers (embeddings, heads, norms) → FP16 (always preserved)
+# 4. Everything else → NVFP4 (Q, K, O projections, up projections, etc.)
+#
+# This is a "smart" preset that auto-detects common layer naming patterns.
+
+# Common patterns for V projections across architectures
+SMART_V_PROJECTION_PATTERNS = [
+    # Wan-style: blocks.N.self_attn.v, blocks.N.cross_attn.v
+    r"\.self_attn\.v\b",
+    r"\.cross_attn\.v\b",
+    # Qwen-style: transformer_blocks.N.attn.to_v, transformer_blocks.N.attn.add_v_proj
+    r"\.attn\.to_v\b",
+    r"\.attn\.add_v_proj\b",
+    # Generic patterns for other architectures
+    r"\.v_proj\b",
+    r"\.to_v\b",
+    r"\.value\b",
+    r"\.wv\b",  # Some models use wv for value projection
+]
+
+# Common patterns for down/gate projections across architectures
+SMART_DOWN_PROJECTION_PATTERNS = [
+    # Wan-style: blocks.N.ffn.2
+    r"\.ffn\.2\b",
+    # Qwen-style: transformer_blocks.N.img_mlp.net.2, transformer_blocks.N.txt_mlp.net.2
+    r"\.mlp\.net\.2\b",
+    r"\.img_mlp\.net\.2\b",
+    r"\.txt_mlp\.net\.2\b",
+    # Generic FFN down projection patterns
+    r"\.mlp\.down_proj\b",
+    r"\.mlp\.w2\b",
+    r"\.mlp\.c_proj\b",
+    r"\.feed_forward\.w2\b",
+    r"\.ff\.net\.2\b",  # Some use ff instead of ffn
+    r"\.ffn\.down\b",
+    r"\.fc2\b",  # Simple feedforward naming
+]
+
+# Common patterns for I/O layers that should always stay FP16
+SMART_IO_SKIP_PATTERNS = [
+    # Input projections
+    r"^img_in\b",
+    r"^txt_in\b",
+    r"^patch_embed",
+    r"^embed",
+    r"^wte\b",  # Token embeddings (GPT-style)
+    r"^wpe\b",  # Position embeddings (GPT-style)
+    r"\.patch_embedding\b",
+    r"\.pos_embed",
+    r"\.token_embed",
+    # Output projections
+    r"^proj_out\b",
+    r"^head\b",
+    r"^lm_head\b",
+    r"\.head\b",
+    r"^final_layer\b",
+    r"^output\b",
+    # Normalization (usually 1D but catch any 2D variants)
+    r"^norm_out\b",
+    r"\.norm_out\b",
+    r"^final_norm\b",
+    r"\.final_layer_norm\b",
+    # Time/text embeddings
+    r"^time_embed",
+    r"^time_text_embed",
+    r"^timestep_embed",
+    r"\.time_embedding\b",
+    r"\.text_embedding\b",
+    # Modulation layers (usually 1D but catch any)
+    r"modulation",
+]
+
+SMART_PRESET_CONFIG = {
+    "name": "smart",
+    "type": "smart",  # Special type - dynamically generates patterns
+    "description": (
+        "Auto-detects model architecture and applies Unsloth-like quantization. "
+        "V projections and down projections → FP8, I/O layers → FP16, rest → NVFP4."
+    ),
+    "skip_patterns": SMART_IO_SKIP_PATTERNS,
+    "fp8_patterns": SMART_V_PROJECTION_PATTERNS + SMART_DOWN_PROJECTION_PATTERNS,
+}
+
 # Available presets
 PRESETS = {
+    "smart": SMART_PRESET_CONFIG,
     "wan": WAN_PRESET_CONFIG,
     "qwen-image": QWEN_IMAGE_PRESET_CONFIG,
     "qwen-image-edit": QWEN_IMAGE_EDIT_PRESET_CONFIG,
+    "unsloth-qwen-image-edit-2511": UNSLOTH_QWEN_IMAGE_EDIT_2511_CONFIG,
+    "unsloth-qwen-image-2512": UNSLOTH_QWEN_IMAGE_2512_CONFIG,
+    "unsloth-wan": UNSLOTH_WAN_CONFIG,
 }
 
 
-def get_preset_skip_patterns(preset_name: str, num_layers: int) -> List[str]:
+def get_preset_skip_patterns(
+    preset_name: str, num_layers: int
+) -> Tuple[List[str], List[str]]:
     """
-    Generate skip patterns for a preset based on model configuration.
+    Generate skip patterns and FP8 patterns for a preset based on model configuration.
 
     Args:
         preset_name: Name of the preset (e.g., "wan", "qwen-image")
         num_layers: Number of transformer blocks in the model
 
     Returns:
-        List of regex patterns for layers to skip
+        Tuple of (skip_patterns, fp8_patterns):
+        - skip_patterns: Patterns for layers that must stay FP16
+        - fp8_patterns: Patterns for layers that can be FP8 (or FP16 if --use-fp8 not set)
     """
     if preset_name not in PRESETS:
         raise ValueError(
@@ -178,6 +413,15 @@ def get_preset_skip_patterns(preset_name: str, num_layers: int) -> List[str]:
         )
 
     config = PRESETS[preset_name]
+
+    # Handle static and smart presets (hardcoded patterns, no dynamic generation)
+    if config.get("type") in ("static", "smart"):
+        skip_patterns = list(config.get("skip_patterns", []))
+        fp8_patterns = list(config.get("fp8_patterns", []))
+        return skip_patterns, fp8_patterns
+
+    # Dynamic presets - generate patterns based on num_layers
+    # Dynamic presets don't have FP8 patterns (they were designed before this feature)
     patterns = list(config.get("extra_skip_patterns", []))
 
     # Get block prefix (different models use different naming)
@@ -198,7 +442,7 @@ def get_preset_skip_patterns(preset_name: str, num_layers: int) -> List[str]:
         last_blocks = "|".join(str(i) for i in sorted(last_block_indices))
         patterns.append(rf".*{block_prefix}\.({last_blocks})\..*")
 
-    return patterns
+    return patterns, []  # Dynamic presets have no FP8 patterns
 
 
 def detect_num_layers(tensor_names: List[str]) -> int:
@@ -666,6 +910,28 @@ def quantize_nvfp4(
     return output_fp4, blocked_scales, tensor_scale
 
 
+def quantize_fp8(weight: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Quantize a weight tensor to FP8 E4M3 format with per-tensor scaling.
+
+    Args:
+        weight: Input weight tensor of shape (out_features, in_features)
+
+    Returns:
+        Tuple of (quantized_weight_fp8, scale)
+    """
+    # Compute per-tensor scale
+    amax = torch.amax(weight.abs())
+    scale = amax / F8_E4M3_MAX
+    scale = torch.clamp(scale, min=1e-12).to(torch.float32)
+
+    # Scale and convert to FP8
+    scaled = weight.float() / scale
+    fp8_weight = scaled.to(torch.float8_e4m3fn)
+
+    return fp8_weight, scale
+
+
 def try_use_comfy_kitchen() -> bool:
     """Try to import and use comfy_kitchen for optimized quantization."""
     try:
@@ -732,9 +998,10 @@ def classify_layers(
     preset: Optional[str] = None,
     exclude_patterns: Optional[List[str]] = None,
     include_patterns: Optional[List[str]] = None,
-) -> Tuple[Set[str], Set[str], Dict]:
+    use_fp8: bool = False,
+) -> Tuple[Set[str], Set[str], Set[str], Dict]:
     """
-    Classify layers into quantize and skip sets.
+    Classify layers into quantize, fp8, and skip sets.
 
     Args:
         state_dict_keys: List of all tensor names
@@ -743,19 +1010,23 @@ def classify_layers(
         preset: Optional preset name (e.g., "wan") for model-specific settings
         exclude_patterns: Additional patterns to exclude
         include_patterns: Patterns to force include
+        use_fp8: If True, FP8-eligible layers go to fp8_layers; otherwise to skip_layers
 
     Returns:
-        Tuple of (layers_to_quantize, layers_to_skip, info_dict)
+        Tuple of (layers_to_quantize, layers_to_fp8, layers_to_skip, info_dict)
     """
     exclude_patterns = list(exclude_patterns or [])
     include_patterns = list(include_patterns or [])
 
     info = {
         "preset": preset,
-        "preset_patterns": [],
+        "preset_skip_patterns": [],
+        "preset_fp8_patterns": [],
         "num_layers": 0,
         "model_type": None,
     }
+
+    fp8_patterns: List[str] = []
 
     # If preset is specified, detect model info and add preset patterns
     if preset:
@@ -765,18 +1036,25 @@ def classify_layers(
         info["model_type"] = model_type
 
         if num_layers > 0:
-            preset_patterns = get_preset_skip_patterns(preset, num_layers)
-            info["preset_patterns"] = preset_patterns
-            # Prepend preset patterns to exclude patterns
-            exclude_patterns = preset_patterns + exclude_patterns
+            preset_skip_patterns, preset_fp8_patterns = get_preset_skip_patterns(
+                preset, num_layers
+            )
+            info["preset_skip_patterns"] = preset_skip_patterns
+            info["preset_fp8_patterns"] = preset_fp8_patterns
+            # Prepend preset skip patterns to exclude patterns
+            exclude_patterns = preset_skip_patterns + exclude_patterns
+            # Store FP8 patterns separately
+            fp8_patterns = preset_fp8_patterns
         else:
             print(f"Warning: Could not detect number of layers for preset '{preset}'")
 
     # Compile regex patterns
     exclude_re = [re.compile(p, re.IGNORECASE) for p in exclude_patterns]
     include_re = [re.compile(p, re.IGNORECASE) for p in include_patterns]
+    fp8_re = [re.compile(p, re.IGNORECASE) for p in fp8_patterns]
 
     quantize_layers = set()
+    fp8_layers = set()
     skip_layers = set()
 
     for name in state_dict_keys:
@@ -801,9 +1079,17 @@ def classify_layers(
             quantize_layers.add(layer_name)
             continue
 
-        # Check exclude patterns (includes preset patterns)
+        # Check exclude patterns (must stay FP16)
         if any(p.search(layer_name) for p in exclude_re):
             skip_layers.add(layer_name)
+            continue
+
+        # Check FP8 patterns (can be FP8 or FP16 depending on --use-fp8)
+        if any(p.search(layer_name) for p in fp8_re):
+            if use_fp8:
+                fp8_layers.add(layer_name)
+            else:
+                skip_layers.add(layer_name)
             continue
 
         # Safe mode checks
@@ -814,7 +1100,7 @@ def classify_layers(
 
         quantize_layers.add(layer_name)
 
-    return quantize_layers, skip_layers, info
+    return quantize_layers, fp8_layers, skip_layers, info
 
 
 # =============================================================================
@@ -885,6 +1171,7 @@ def convert_to_nvfp4(
     dtype: str = "bfloat16",
     dry_run: bool = False,
     verbose: bool = False,
+    use_fp8: bool = False,
 ) -> Dict:
     """
     Convert a safetensors model to NVFP4 quantization.
@@ -905,6 +1192,7 @@ def convert_to_nvfp4(
         dtype: Compute dtype (bfloat16/float16)
         dry_run: If True, only print what would be done
         verbose: Print detailed progress
+        use_fp8: If True, use FP8 for intermediate precision layers (Q6_K equivalent)
 
     Returns:
         Dict with conversion statistics
@@ -970,13 +1258,14 @@ def convert_to_nvfp4(
                 tensors[name] = f.get_tensor(name)
 
     # Classify layers
-    quantize_layers, skip_layers, classify_info = classify_layers(
+    quantize_layers, fp8_layers, skip_layers, classify_info = classify_layers(
         tensor_names,
         tensors,
         mode,
         preset,
         exclude_patterns or [],
         include_patterns or [],
+        use_fp8,
     )
 
     # Print preset info if used
@@ -989,18 +1278,29 @@ def convert_to_nvfp4(
         skip_last = preset_config.get("skip_last_n_blocks", 0)
         if skip_first or skip_last:
             print(f"Skipping: first {skip_first} blocks, last {skip_last} blocks")
+        if use_fp8 and classify_info.get("preset_fp8_patterns"):
+            print(f"FP8 mode enabled: {len(fp8_layers)} layers will use FP8")
 
-    print(f"\nLayers to quantize: {len(quantize_layers)}")
-    print(f"Layers to skip: {len(skip_layers)}")
+    print(f"\nLayers to quantize (NVFP4): {len(quantize_layers)}")
+    if use_fp8:
+        print(f"Layers to quantize (FP8): {len(fp8_layers)}")
+    print(f"Layers to skip (FP16): {len(skip_layers)}")
 
     if verbose or dry_run:
-        print("\n--- Layers to QUANTIZE ---")
+        print("\n--- Layers to QUANTIZE (NVFP4) ---")
         for layer in sorted(quantize_layers):
             weight = tensors.get(f"{layer}.weight")
             if weight is not None:
                 print(f"  {layer}: {tuple(weight.shape)}")
 
-        print("\n--- Layers to SKIP ---")
+        if use_fp8 and fp8_layers:
+            print("\n--- Layers to QUANTIZE (FP8) ---")
+            for layer in sorted(fp8_layers):
+                weight = tensors.get(f"{layer}.weight")
+                if weight is not None:
+                    print(f"  {layer}: {tuple(weight.shape)}")
+
+        print("\n--- Layers to SKIP (FP16) ---")
         for layer in sorted(skip_layers):
             weight = tensors.get(f"{layer}.weight")
             if weight is not None:
@@ -1031,6 +1331,9 @@ def convert_to_nvfp4(
                     quantized_size += tensor.numel() * 0.5 * 1.0625
                     # Plus tensor scale (4 bytes) and comfy_quant (~20 bytes)
                     quantized_size += 24
+                elif layer in fp8_layers:
+                    # FP8: 1 byte per element
+                    quantized_size += tensor.numel() * 1
                 else:
                     quantized_size += tensor.numel() * tensor.element_size()
             else:
@@ -1043,6 +1346,7 @@ def convert_to_nvfp4(
 
         return {
             "quantized_layers": len(quantize_layers),
+            "fp8_layers": len(fp8_layers),
             "skipped_layers": len(skip_layers),
             "original_size": original_size,
             "estimated_size": quantized_size,
@@ -1059,22 +1363,26 @@ def convert_to_nvfp4(
     output_tensors = {}
     stats = {
         "quantized_layers": 0,
+        "fp8_layers": 0,
         "skipped_layers": 0,
         "calibrated_layers": 0,
         "original_bytes": 0,
         "quantized_bytes": 0,
     }
 
-    # Track which tensors belong to quantized layers
-    quantized_layer_tensors = set()
+    # Track which tensors belong to quantized/fp8 layers
+    processed_layer_tensors = set()
     for layer in quantize_layers:
-        quantized_layer_tensors.add(f"{layer}.weight")
-        quantized_layer_tensors.add(f"{layer}.bias")
+        processed_layer_tensors.add(f"{layer}.weight")
+        processed_layer_tensors.add(f"{layer}.bias")
+    for layer in fp8_layers:
+        processed_layer_tensors.add(f"{layer}.weight")
+        processed_layer_tensors.add(f"{layer}.bias")
 
     print("\nQuantizing layers...")
 
-    # Process quantized layers
-    for layer in tqdm(sorted(quantize_layers), desc="Quantizing"):
+    # Process NVFP4 quantized layers
+    for layer in tqdm(sorted(quantize_layers), desc="Quantizing (NVFP4)"):
         weight_name = f"{layer}.weight"
         bias_name = f"{layer}.bias"
 
@@ -1135,10 +1443,60 @@ def convert_to_nvfp4(
         if device == "cuda":
             torch.cuda.empty_cache()
 
+    # Process FP8 layers
+    if fp8_layers:
+        for layer in tqdm(sorted(fp8_layers), desc="Quantizing (FP8)"):
+            weight_name = f"{layer}.weight"
+            bias_name = f"{layer}.bias"
+
+            weight = tensors[weight_name]
+            stats["original_bytes"] += weight.numel() * weight.element_size()
+
+            # Move to device for quantization
+            weight_device = weight.to(device=device, dtype=torch.float32)
+
+            # Quantize to FP8
+            try:
+                fp8_weight, scale = quantize_fp8(weight_device)
+            except Exception as e:
+                print(f"\nWarning: Failed to FP8 quantize {layer}: {e}")
+                print(f"  Keeping original weight")
+                output_tensors[weight_name] = weight
+                if bias_name in tensors:
+                    output_tensors[bias_name] = tensors[bias_name]
+                stats["skipped_layers"] += 1
+                continue
+
+            # Store FP8 quantized tensors
+            output_tensors[weight_name] = fp8_weight.cpu()
+            output_tensors[f"{layer}.weight_scale"] = scale.cpu()
+
+            # Comfy quant config for FP8
+            quant_config = {"format": "fp8_e4m3fn"}
+            config_bytes = json.dumps(quant_config).encode("utf-8")
+            output_tensors[f"{layer}.comfy_quant"] = torch.tensor(
+                list(config_bytes), dtype=torch.uint8
+            )
+
+            # Copy bias if exists
+            if bias_name in tensors:
+                output_tensors[bias_name] = tensors[bias_name]
+
+            stats["fp8_layers"] += 1
+            stats["quantized_bytes"] += (
+                fp8_weight.numel() * fp8_weight.element_size()
+                + scale.numel() * scale.element_size()
+            )
+
+            # Free GPU memory
+            del weight_device
+            if device == "cuda":
+                torch.cuda.empty_cache()
+
     # Copy non-quantized tensors
     print("Copying non-quantized tensors...")
     for name in tqdm(tensor_names, desc="Copying"):
-        if name not in output_tensors and name not in quantized_layer_tensors:
+        if name not in output_tensors and name not in processed_layer_tensors:
             output_tensors[name] = tensors[name]
             stats["original_bytes"] += (
                 tensors[name].numel() * tensors[name].element_size()
@@ -1169,6 +1527,8 @@ def convert_to_nvfp4(
             output_metadata["nvfp4_model_type"] = str(classify_info["model_type"])
     if is_sharded:
         output_metadata["nvfp4_source_shards"] = str(num_shards)
+    if use_fp8 and stats["fp8_layers"] > 0:
+        output_metadata["nvfp4_fp8_layers"] = str(stats["fp8_layers"])
 
     save_file(output_tensors, output_path_obj, metadata=output_metadata)
 
@@ -1178,8 +1538,10 @@ def convert_to_nvfp4(
     print("=" * 50)
     if is_sharded:
         print(f"Consolidated {num_shards} shards into single file")
-    print(f"Quantized layers: {stats['quantized_layers']}")
-    print(f"Skipped layers: {stats['skipped_layers']}")
+    print(f"Quantized layers (NVFP4): {stats['quantized_layers']}")
+    if stats["fp8_layers"] > 0:
+        print(f"Quantized layers (FP8): {stats['fp8_layers']}")
+    print(f"Skipped layers (FP16): {stats['skipped_layers']}")
     if calibrate:
         print(f"Calibrated layers: {stats['calibrated_layers']}")
     print(f"Original size: {stats['original_bytes'] / 1e9:.2f} GB")
@@ -1222,6 +1584,18 @@ Examples:
   # Use Qwen Image Edit preset
   python convert_nvfp4.py qwen_edit.safetensors qwen_edit_nvfp4.safetensors --preset qwen-image-edit
 
+  # Use Unsloth-derived preset for Qwen Image Edit (best quality)
+  python convert_nvfp4.py qwen_edit.safetensors qwen_edit_nvfp4.safetensors --preset unsloth-qwen-image-edit-2511
+
+  # Use Unsloth-derived preset for Qwen Image 2512
+  python convert_nvfp4.py qwen_image.safetensors qwen_nvfp4.safetensors --preset unsloth-qwen-image-2512
+
+  # Use Unsloth-derived preset for any Wan model (best quality)
+  python convert_nvfp4.py wan_model.safetensors wan_nvfp4.safetensors --preset unsloth-wan
+
+  # Mixed precision: NVFP4 + FP8 for intermediate layers (better quality)
+  python convert_nvfp4.py wan_model.safetensors wan_mixed.safetensors --preset unsloth-wan --use-fp8
+
   # Safe mode - skip sensitive layers  
   python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --mode safe
 
@@ -1234,7 +1608,18 @@ Examples:
   # With basic calibration
   python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --calibrate
 
+  # Smart preset - auto-detect architecture and apply Unsloth-like rules
+  python convert_nvfp4.py any_model.safetensors any_nvfp4.safetensors --preset smart
+
+  # Smart preset with FP8 for best quality on unknown models
+  python convert_nvfp4.py any_model.safetensors any_mixed.safetensors --preset smart --use-fp8
+
 Presets:
+  smart           - (Recommended for unknown models) Auto-detects architecture and
+                    applies Unsloth-like quantization rules. V projections and down
+                    projections use FP8 (with --use-fp8) or skip, I/O layers stay FP16,
+                    everything else becomes NVFP4. Works with any transformer model.
+
   wan             - Wan 2.1/2.2 video models. Skips first/last 2 transformer blocks
                     plus embeddings, head, and modulation layers for better quality.
                     Works for ALL Wan variants: T2V, I2V, TI2V, Camera, Vace, S2V,
@@ -1245,6 +1630,28 @@ Presets:
 
   qwen-image-edit - Qwen Image Edit 2511 (Nov 2025). Same as qwen-image but
                     optimized for the edit model variant.
+
+  unsloth-qwen-image-edit-2511
+                  - Derived from Unsloth's Q4_K_M quantization. Skips V projections,
+                    MLP down projections, first/last blocks, and I/O layers.
+                    Based on analysis of which layers Unsloth kept at Q6_K+ precision.
+
+  unsloth-qwen-image-2512
+                  - Derived from Unsloth's Q5_K_S quantization. Skips first/last 2
+                    blocks and I/O layers. Simpler pattern - more layers quantized.
+
+  unsloth-wan     - Derived from Unsloth's Q5_K_M quantization for Wan models.
+                    Skips V projections and FFN down projections across all blocks.
+                    Works for ALL Wan: 2.1, 2.2, 5B, 14B, T2V, I2V, TI2V, MAGREF, etc.
+
+Mixed Precision (--use-fp8):
+  When using --use-fp8 with smart or Unsloth-derived presets, layers are quantized as:
+    - NVFP4 (4-bit): Q, K, O projections, up projections, most layers
+    - FP8 E4M3 (8-bit): V projections, down/gate projections (quality-critical)
+    - FP16: I/O layers (embeddings, heads, modulators)
+  
+  This provides better quality than pure NVFP4 with moderate size increase.
+  For Wan 14B, --use-fp8 adds ~5GB but preserves quality in sensitive layers.
 
 Supported inputs:
   - Single .safetensors file
@@ -1341,6 +1748,13 @@ Supported models:
         help="Preview what would be quantized without converting",
     )
 
+    parser.add_argument(
+        "--use-fp8",
+        action="store_true",
+        help="Use FP8 for intermediate precision layers (Q6_K equivalent in GGUF). "
+        "Creates mixed NVFP4/FP8 output for better quality with moderate size increase.",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -1358,6 +1772,7 @@ Supported models:
             dtype=args.dtype,
             dry_run=args.dry_run,
             verbose=args.verbose,
+            use_fp8=args.use_fp8,
         )
     except KeyboardInterrupt:
         print("\nConversion cancelled.")
