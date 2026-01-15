@@ -1472,7 +1472,7 @@ def convert_to_nvfp4(
             output_tensors[f"{layer}.weight_scale"] = scale.cpu()
 
             # Comfy quant config for FP8
-            quant_config = {"format": "fp8_e4m3fn"}
+            quant_config = {"format": "float8_e4m3fn"}
             config_bytes = json.dumps(quant_config).encode("utf-8")
             output_tensors[f"{layer}.comfy_quant"] = torch.tensor(
                 list(config_bytes), dtype=torch.uint8
