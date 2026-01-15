@@ -77,6 +77,212 @@ SAFE_MODE_SKIP_PATTERNS = [
 # Minimum dimensions for quantization (skip small matrices)
 MIN_DIM_FOR_QUANTIZATION = 256
 
+# =============================================================================
+# Presets for specific model architectures
+# =============================================================================
+
+# Wan 2.1/2.2 preset configuration
+# These models have 32 transformer blocks by default (5B), or 40 blocks (14B)
+# Conservative preset: skip first 2 and last 2 blocks
+# Works for all Wan variants: T2V, I2V, Camera, Vace, S2V, Animate, HuMo, etc.
+WAN_PRESET_CONFIG = {
+    "name": "wan",
+    "description": "Wan 2.1/2.2 video models (conservative - skips first/last 2 blocks)",
+    "block_prefix": "blocks",  # Wan uses "blocks.N.xxx"
+    "skip_first_n_blocks": 2,  # blocks.0, blocks.1
+    "skip_last_n_blocks": 2,  # blocks.30, blocks.31 (for 32-layer model)
+    # Additional patterns to skip (on top of safe mode patterns)
+    "extra_skip_patterns": [
+        r".*\.head\..*",  # Output projection head
+        r".*modulation.*",  # All modulation parameters
+        r".*time_embedding.*",  # Time conditioning
+        r".*time_projection.*",  # Time projection
+        r".*text_embedding.*",  # Text conditioning
+        r".*img_emb.*",  # Image embeddings (for i2v models)
+        r".*patch_embedding.*",  # Patch embeddings
+        r".*\.norm.*",  # Normalization layers
+        r".*vace_patch_embedding.*",  # Vace patch embedding
+        r".*vace_blocks\..*",  # Vace blocks (keep at full precision)
+        r".*control_adapter.*",  # Camera control adapter
+        r".*ref_conv.*",  # Reference convolution
+    ],
+}
+
+# Qwen Image preset configuration (for qwen-image-2512 - Dec 2025)
+# These models have 60 transformer blocks by default
+# Conservative preset: skip first 3 and last 3 blocks
+QWEN_IMAGE_PRESET_CONFIG = {
+    "name": "qwen-image",
+    "description": "Qwen Image 2512 models (conservative - skips first/last 3 blocks)",
+    "block_prefix": "transformer_blocks",  # Qwen uses "transformer_blocks.N.xxx"
+    "skip_first_n_blocks": 3,  # transformer_blocks.0, 1, 2
+    "skip_last_n_blocks": 3,  # transformer_blocks.57, 58, 59 (for 60-layer model)
+    # Additional patterns to skip
+    "extra_skip_patterns": [
+        r".*\.img_in\..*",  # Image input projection
+        r".*\.txt_in\..*",  # Text input projection
+        r".*\.txt_norm\..*",  # Text normalization
+        r".*\.norm_out\..*",  # Output normalization
+        r".*\.proj_out\..*",  # Final output projection
+        r".*time_text_embed.*",  # Timestep embeddings
+        r".*pe_embedder.*",  # Positional embeddings
+        r".*\.norm.*",  # All normalization layers
+        r".*_mod\.",  # Modulation layers (img_mod, txt_mod)
+    ],
+}
+
+# Qwen Image Edit preset configuration (for qwen-image-edit-2511 - Nov 2025)
+# Same architecture as Qwen Image but may have different sensitivity
+QWEN_IMAGE_EDIT_PRESET_CONFIG = {
+    "name": "qwen-image-edit",
+    "description": "Qwen Image Edit 2511 models (conservative - skips first/last 3 blocks)",
+    "block_prefix": "transformer_blocks",
+    "skip_first_n_blocks": 3,
+    "skip_last_n_blocks": 3,
+    "extra_skip_patterns": [
+        r".*\.img_in\..*",  # Image input projection
+        r".*\.txt_in\..*",  # Text input projection
+        r".*\.txt_norm\..*",  # Text normalization
+        r".*\.norm_out\..*",  # Output normalization
+        r".*\.proj_out\..*",  # Final output projection
+        r".*time_text_embed.*",  # Timestep embeddings
+        r".*pe_embedder.*",  # Positional embeddings
+        r".*\.norm.*",  # All normalization layers
+        r".*_mod\.",  # Modulation layers
+        r".*__index_timestep_zero__.*",  # Special index tensor (edit model marker)
+    ],
+}
+
+# Available presets
+PRESETS = {
+    "wan": WAN_PRESET_CONFIG,
+    "qwen-image": QWEN_IMAGE_PRESET_CONFIG,
+    "qwen-image-edit": QWEN_IMAGE_EDIT_PRESET_CONFIG,
+}
+
+
+def get_preset_skip_patterns(preset_name: str, num_layers: int) -> List[str]:
+    """
+    Generate skip patterns for a preset based on model configuration.
+
+    Args:
+        preset_name: Name of the preset (e.g., "wan", "qwen-image")
+        num_layers: Number of transformer blocks in the model
+
+    Returns:
+        List of regex patterns for layers to skip
+    """
+    if preset_name not in PRESETS:
+        raise ValueError(
+            f"Unknown preset: {preset_name}. Available: {list(PRESETS.keys())}"
+        )
+
+    config = PRESETS[preset_name]
+    patterns = list(config.get("extra_skip_patterns", []))
+
+    # Get block prefix (different models use different naming)
+    block_prefix = config.get("block_prefix", "blocks")
+
+    # Generate block skip patterns based on num_layers
+    skip_first = config.get("skip_first_n_blocks", 0)
+    skip_last = config.get("skip_last_n_blocks", 0)
+
+    if skip_first > 0:
+        # Pattern to match first N blocks
+        first_blocks = "|".join(str(i) for i in range(skip_first))
+        patterns.append(rf".*{block_prefix}\.({first_blocks})\..*")
+
+    if skip_last > 0:
+        # Pattern to match last N blocks
+        last_block_indices = [num_layers - 1 - i for i in range(skip_last)]
+        last_blocks = "|".join(str(i) for i in sorted(last_block_indices))
+        patterns.append(rf".*{block_prefix}\.({last_blocks})\..*")
+
+    return patterns
+
+
+def detect_num_layers(tensor_names: List[str]) -> int:
+    """
+    Detect the number of transformer blocks from tensor names.
+    Supports both Wan-style (blocks.N) and Qwen-style (transformer_blocks.N).
+
+    Args:
+        tensor_names: List of tensor names in the model
+
+    Returns:
+        Number of blocks detected
+    """
+    block_indices = set()
+
+    # Try multiple block naming patterns
+    block_patterns = [
+        re.compile(r"blocks\.(\d+)\."),  # Wan models
+        re.compile(r"transformer_blocks\.(\d+)\."),  # Qwen Image models
+    ]
+
+    for name in tensor_names:
+        for pattern in block_patterns:
+            match = pattern.search(name)
+            if match:
+                block_indices.add(int(match.group(1)))
+                break
+
+    if not block_indices:
+        return 0
+
+    return max(block_indices) + 1
+
+
+def detect_model_type(tensor_names: List[str]) -> Optional[str]:
+    """
+    Detect the model type from tensor names.
+
+    Args:
+        tensor_names: List of tensor names in the model
+
+    Returns:
+        Detected model type or None
+    """
+    tensor_set = set(tensor_names)
+
+    # Wan model detection (same logic as ComfyUI's model_detection.py)
+    if any("head.modulation" in n for n in tensor_names):
+        # It's a Wan model
+        if any("vace_patch_embedding" in n for n in tensor_names):
+            return "wan_vace"
+        elif any("control_adapter.conv" in n for n in tensor_names):
+            if any("img_emb.proj.0" in n for n in tensor_names):
+                return "wan_camera"
+            else:
+                return "wan_camera_2.2"
+        elif any("casual_audio_encoder" in n for n in tensor_names):
+            return "wan_s2v"
+        elif any("audio_proj.audio_proj_glob" in n for n in tensor_names):
+            return "wan_humo"
+        elif any("face_adapter.fuser_blocks" in n for n in tensor_names):
+            return "wan_animate"
+        elif any("img_emb.proj.0" in n for n in tensor_names):
+            return "wan_i2v"
+        else:
+            return "wan_t2v"
+
+    # Qwen Image model detection (same logic as ComfyUI's model_detection.py)
+    if any("txt_norm.weight" in n for n in tensor_names):
+        # It's a Qwen Image model
+        if any("__index_timestep_zero__" in n for n in tensor_names):
+            # Edit model (2511 - Nov 2025)
+            return "qwen_image_edit_2511"
+        elif any(
+            "time_text_embed.addition_t_embedding.weight" in n for n in tensor_names
+        ):
+            # Layered model variant
+            return "qwen_image_layered"
+        else:
+            # Standard Qwen Image (2512 - Dec 2025)
+            return "qwen_image_2512"
+
+    return None
+
 
 # =============================================================================
 # Sharded Model Loading
@@ -523,9 +729,10 @@ def classify_layers(
     state_dict_keys: List[str],
     tensors: Dict[str, torch.Tensor],
     mode: str = "all",
+    preset: Optional[str] = None,
     exclude_patterns: Optional[List[str]] = None,
     include_patterns: Optional[List[str]] = None,
-) -> Tuple[Set[str], Set[str]]:
+) -> Tuple[Set[str], Set[str], Dict]:
     """
     Classify layers into quantize and skip sets.
 
@@ -533,14 +740,37 @@ def classify_layers(
         state_dict_keys: List of all tensor names
         tensors: Dict mapping names to tensors
         mode: "all" or "safe"
+        preset: Optional preset name (e.g., "wan") for model-specific settings
         exclude_patterns: Additional patterns to exclude
         include_patterns: Patterns to force include
 
     Returns:
-        Tuple of (layers_to_quantize, layers_to_skip)
+        Tuple of (layers_to_quantize, layers_to_skip, info_dict)
     """
-    exclude_patterns = exclude_patterns or []
-    include_patterns = include_patterns or []
+    exclude_patterns = list(exclude_patterns or [])
+    include_patterns = list(include_patterns or [])
+
+    info = {
+        "preset": preset,
+        "preset_patterns": [],
+        "num_layers": 0,
+        "model_type": None,
+    }
+
+    # If preset is specified, detect model info and add preset patterns
+    if preset:
+        num_layers = detect_num_layers(state_dict_keys)
+        model_type = detect_model_type(state_dict_keys)
+        info["num_layers"] = num_layers
+        info["model_type"] = model_type
+
+        if num_layers > 0:
+            preset_patterns = get_preset_skip_patterns(preset, num_layers)
+            info["preset_patterns"] = preset_patterns
+            # Prepend preset patterns to exclude patterns
+            exclude_patterns = preset_patterns + exclude_patterns
+        else:
+            print(f"Warning: Could not detect number of layers for preset '{preset}'")
 
     # Compile regex patterns
     exclude_re = [re.compile(p, re.IGNORECASE) for p in exclude_patterns]
@@ -571,7 +801,7 @@ def classify_layers(
             quantize_layers.add(layer_name)
             continue
 
-        # Check exclude patterns
+        # Check exclude patterns (includes preset patterns)
         if any(p.search(layer_name) for p in exclude_re):
             skip_layers.add(layer_name)
             continue
@@ -584,7 +814,7 @@ def classify_layers(
 
         quantize_layers.add(layer_name)
 
-    return quantize_layers, skip_layers
+    return quantize_layers, skip_layers, info
 
 
 # =============================================================================
@@ -645,6 +875,7 @@ def convert_to_nvfp4(
     input_path: str,
     output_path: str,
     mode: str = "all",
+    preset: Optional[str] = None,
     exclude_patterns: Optional[List[str]] = None,
     include_patterns: Optional[List[str]] = None,
     calibrate: bool = False,
@@ -664,6 +895,7 @@ def convert_to_nvfp4(
         input_path: Path to input safetensors file, index.json, or directory
         output_path: Path to output safetensors file
         mode: "all" or "safe"
+        preset: Optional preset name for model-specific settings (e.g., "wan")
         exclude_patterns: Patterns for layers to skip
         include_patterns: Patterns to force include
         calibrate: Whether to run calibration
@@ -738,9 +970,25 @@ def convert_to_nvfp4(
                 tensors[name] = f.get_tensor(name)
 
     # Classify layers
-    quantize_layers, skip_layers = classify_layers(
-        tensor_names, tensors, mode, exclude_patterns or [], include_patterns or []
+    quantize_layers, skip_layers, classify_info = classify_layers(
+        tensor_names,
+        tensors,
+        mode,
+        preset,
+        exclude_patterns or [],
+        include_patterns or [],
     )
+
+    # Print preset info if used
+    if preset and classify_info.get("num_layers"):
+        print(f"\n--- Preset: {preset} ---")
+        print(f"Detected model type: {classify_info.get('model_type', 'unknown')}")
+        print(f"Detected {classify_info['num_layers']} transformer blocks")
+        preset_config = PRESETS.get(preset, {})
+        skip_first = preset_config.get("skip_first_n_blocks", 0)
+        skip_last = preset_config.get("skip_last_n_blocks", 0)
+        if skip_first or skip_last:
+            print(f"Skipping: first {skip_first} blocks, last {skip_last} blocks")
 
     print(f"\nLayers to quantize: {len(quantize_layers)}")
     print(f"Layers to skip: {len(skip_layers)}")
@@ -905,11 +1153,20 @@ def convert_to_nvfp4(
     # Save output
     print(f"\nSaving to: {output_path_obj}")
 
-    # Prepare metadata
-    output_metadata = dict(metadata) if isinstance(metadata, dict) else {}
+    # Prepare metadata - safetensors requires all values to be strings
+    output_metadata = {}
+    if isinstance(metadata, dict):
+        for k, v in metadata.items():
+            output_metadata[str(k)] = str(v) if v is not None else ""
     output_metadata["nvfp4_converter"] = "convert_nvfp4.py"
     output_metadata["nvfp4_mode"] = mode
     output_metadata["nvfp4_quantized_layers"] = str(stats["quantized_layers"])
+    if preset:
+        output_metadata["nvfp4_preset"] = preset
+        if classify_info.get("num_layers"):
+            output_metadata["nvfp4_num_layers"] = str(classify_info["num_layers"])
+        if classify_info.get("model_type"):
+            output_metadata["nvfp4_model_type"] = str(classify_info["model_type"])
     if is_sharded:
         output_metadata["nvfp4_source_shards"] = str(num_shards)
 
@@ -956,6 +1213,15 @@ Examples:
   # Convert sharded model (via directory containing index.json)
   python convert_nvfp4.py ./my_sharded_model/ model_nvfp4.safetensors
 
+  # Use Wan preset for Wan 2.1/2.2 models (recommended for quality)
+  python convert_nvfp4.py wan_model.safetensors wan_nvfp4.safetensors --preset wan
+
+  # Use Qwen Image preset
+  python convert_nvfp4.py qwen_image.safetensors qwen_nvfp4.safetensors --preset qwen-image
+
+  # Use Qwen Image Edit preset
+  python convert_nvfp4.py qwen_edit.safetensors qwen_edit_nvfp4.safetensors --preset qwen-image-edit
+
   # Safe mode - skip sensitive layers  
   python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --mode safe
 
@@ -968,14 +1234,26 @@ Examples:
   # With basic calibration
   python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --calibrate
 
+Presets:
+  wan             - Wan 2.1/2.2 video models. Skips first/last 2 transformer blocks
+                    plus embeddings, head, and modulation layers for better quality.
+                    Works for ALL Wan variants: T2V, I2V, TI2V, Camera, Vace, S2V,
+                    Animate, HuMo, MagRef. Supports both 5B (32 blocks) and 14B models.
+
+  qwen-image      - Qwen Image 2512 (Dec 2025). Skips first/last 3 transformer blocks
+                    plus input/output projections and modulation layers.
+
+  qwen-image-edit - Qwen Image Edit 2511 (Nov 2025). Same as qwen-image but
+                    optimized for the edit model variant.
+
 Supported inputs:
   - Single .safetensors file
   - model.safetensors.index.json (sharded model index)
   - Directory containing index.json and shard files
 
 Supported models:
-  - Wan2.1 / Wan2.2 (text-to-video, image-to-video, etc.)
-  - Qwen Image / Qwen Image Edit
+  - Wan 2.1 / Wan 2.2 (all variants: T2V, I2V, TI2V, Camera, Vace, etc.)
+  - Qwen Image 2512 / Qwen Image Edit 2511
   - Any model with Linear layers
         """,
     )
@@ -992,6 +1270,15 @@ Supported models:
         choices=["all", "safe"],
         default="all",
         help="Quantization mode: 'all' quantizes all Linear layers, 'safe' skips sensitive layers (default: all)",
+    )
+
+    parser.add_argument(
+        "--preset",
+        choices=list(PRESETS.keys()),
+        default=None,
+        metavar="NAME",
+        help="Use a model-specific preset (e.g., 'wan' for Wan 2.1/2.2 models). "
+        "Presets configure optimal skip patterns for specific architectures.",
     )
 
     parser.add_argument(
@@ -1061,6 +1348,7 @@ Supported models:
             input_path=args.input,
             output_path=args.output,
             mode=args.mode,
+            preset=args.preset,
             exclude_patterns=args.exclude,
             include_patterns=args.include,
             calibrate=args.calibrate,
