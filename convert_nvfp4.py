@@ -311,6 +311,47 @@ def get_preset_skip_patterns(
         - fp8_patterns: Patterns for layers that can be FP8 (or FP16 if --use-fp8 not set)
     """
     if preset_name not in PRESETS:
+        raise ValueError(
+            f"Unknown preset: {preset_name}. Available: {list(PRESETS.keys())}"
+        )
+
+    config = PRESETS[preset_name]
+
+    # Handle static and smart presets (hardcoded patterns, no dynamic generation)
+    if config.get("type") in ("static", "smart"):
+        skip_patterns = list(config.get("skip_patterns", []))
+        fp8_patterns = list(config.get("fp8_patterns", []))
+        return skip_patterns, fp8_patterns
+
+    # Dynamic presets - generate patterns based on num_layers
+    # Dynamic presets don't have FP8 patterns (they were designed before this feature)
+    patterns = list(config.get("extra_skip_patterns", []))
+
+    # Get block prefix (different models use different naming)
+    block_prefix = config.get("block_prefix", "blocks")
+
+    # Generate block skip patterns based on num_layers
+    skip_first = config.get("skip_first_n_blocks", 0)
+    skip_last = config.get("skip_last_n_blocks", 0)
+
+    if skip_first > 0:
+        # Pattern to match first N blocks
+        first_blocks = "|".join(str(i) for i in range(skip_first))
+        patterns.append(rf".*{block_prefix}\.({first_blocks})\..*")
+
+    if skip_last > 0:
+        # Pattern to match last N blocks
+        last_block_indices = [num_layers - 1 - i for i in range(skip_last)]
+        last_blocks = "|".join(str(i) for i in sorted(last_block_indices))
+        patterns.append(rf".*{block_prefix}\.({last_blocks})\..*")
+
+    return patterns, []  # Dynamic presets have no FP8 patterns
+
+
+def detect_num_layers(tensor_names: List[str]) -> int:
+    """
+    Detect the number of transformer blocks from tensor names.
+
     Returns:
         Number of blocks detected
     """
