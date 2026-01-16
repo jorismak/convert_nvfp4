@@ -2061,16 +2061,20 @@ def convert_to_nvfp4(
             else:
                 if layer in input_scale_map:
                     output_tensors[f"{layer}.input_scale"] = input_scale_map[layer]
-                if input_scale_value is None:
-                    # Fallback heuristic (kept for compatibility)
-                    activation_amax_estimate = 10.0
-                    input_scale_value = activation_amax_estimate / (
-                        F8_E4M3_MAX * F4_E2M1_MAX
+                else:
+                    if input_scale_value is None:
+                        # Fallback heuristic (kept for compatibility)
+                        activation_amax_estimate = 10.0
+                        fallback_value = activation_amax_estimate / (
+                            F8_E4M3_MAX * F4_E2M1_MAX
+                        )
+                    else:
+                        fallback_value = input_scale_value
+
+                    input_scale = torch.tensor(
+                        [fallback_value], dtype=torch.float32, device="cpu"
                     )
-                input_scale = torch.tensor(
-                    [input_scale_value], dtype=torch.float32, device="cpu"
-                )
-                output_tensors[f"{layer}.input_scale"] = input_scale
+                    output_tensors[f"{layer}.input_scale"] = input_scale
 
         # Copy bias if exists
         if bias_name in tensors:
