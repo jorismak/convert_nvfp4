@@ -52,6 +52,15 @@ Examples:
 
     # Calibrate input_scale from FP16/FP32 WAN model activations
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-from-fp16 wan_fp16.safetensors
+
+    # Use per-layer input_scale from summary JSON (from analyze_input_scale_log.py)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-summary-json nvfp4_scales_summary.json --input-scale-summary-percentile 99
+
+    # Add margin to summary-derived input_scale
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-summary-json nvfp4_scales_summary.json --input-scale-summary-percentile 99 --input-scale-summary-multiplier 1.05
+
+    # Print per-layer input_scale used
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-layer-summary
 """
 
 import argparse
@@ -1638,6 +1647,10 @@ def convert_to_nvfp4(
     input_scale_method: str = "max",
     input_scale_samples: int = 8,
     comfyui_root: Optional[str] = None,
+    input_scale_summary_json: Optional[str] = None,
+    input_scale_summary_percentile: int = 99,
+    input_scale_summary_multiplier: float = 1.0,
+    input_scale_layer_summary: bool = False,
     use_ck_quant: bool = False,
     calibrate: bool = False,
     calibrate_steps: int = 8,
@@ -1668,6 +1681,10 @@ def convert_to_nvfp4(
         input_scale_method: Method for input_scale aggregation (max/mean/percentile_99)
         input_scale_samples: Number of activation samples to run
         comfyui_root: Optional ComfyUI root path for WAN model loading
+        input_scale_summary_json: Optional summary JSON from analyze_input_scale_log.py
+        input_scale_summary_percentile: Percentile to use from summary JSON
+        input_scale_summary_multiplier: Multiplier applied to summary scales
+        input_scale_layer_summary: Print per-layer input_scale values after conversion
         use_ck_quant: Use comfy_kitchen quantize_nvfp4 for backend-compatible packing
         calibrate: Whether to run calibration
         calibrate_steps: Number of calibration steps
@@ -1702,8 +1719,13 @@ def convert_to_nvfp4(
         print("Warning: --input-scale-from ignored because --no-input-scale was set.")
     if input_scale_from_fp16 and not add_input_scale:
         print("Warning: --input-scale-from-fp16 ignored because --no-input-scale was set.")
+    if input_scale_summary_json and not add_input_scale:
+        print("Warning: --input-scale-summary-json ignored because --no-input-scale was set.")
+    if input_scale_summary_multiplier <= 0:
+        raise ValueError("--input-scale-summary-multiplier must be > 0")
 
     input_scale_map: Dict[str, torch.Tensor] = {}
+    input_scale_source: Dict[str, str] = {}
 
     ck = None
     if use_ck_quant:
@@ -1845,6 +1867,40 @@ def convert_to_nvfp4(
             comfyui_root,
         )
 
+    if add_input_scale and input_scale_summary_json:
+        summary_path = Path(input_scale_summary_json)
+        if not summary_path.exists():
+            raise FileNotFoundError(
+                f"Input scale summary not found: {input_scale_summary_json}"
+            )
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        percentile_key = f"scale_p{input_scale_summary_percentile}"
+        summary_layers = summary.get("layers", [])
+        summary_map: Dict[str, torch.Tensor] = {}
+        for row in summary_layers:
+            layer = row.get("layer")
+            if not layer:
+                continue
+            if percentile_key in row:
+                val = float(row[percentile_key])
+            elif "scale_max" in row:
+                val = float(row["scale_max"])
+            elif "scale_mean" in row:
+                val = float(row["scale_mean"])
+            else:
+                continue
+            val *= input_scale_summary_multiplier
+            summary_map[layer] = torch.tensor([val], dtype=torch.float32)
+        input_scale_map = summary_map
+        if input_scale_map:
+            vals = [float(v.item()) for v in input_scale_map.values()]
+            print(
+                f"Input scale summary ({percentile_key}, x{input_scale_summary_multiplier}): "
+                f"count={len(vals)}, min={min(vals):.6f}, max={max(vals):.6f}, "
+                f"mean={(sum(vals)/len(vals)):.6f}"
+            )
+            input_scale_source = {k: "summary" for k in input_scale_map.keys()}
+
     if add_input_scale and input_scale_from:
         input_scale_path = Path(input_scale_from)
         if not input_scale_path.exists():
@@ -1854,6 +1910,20 @@ def convert_to_nvfp4(
                 if name.endswith(".input_scale"):
                     base = name[: -len(".input_scale")]
                     input_scale_map[base] = f.get_tensor(name).to(torch.float32)
+                    input_scale_source[base] = "file"
+
+    if add_input_scale and input_scale_from_fp16:
+        for k in input_scale_map.keys():
+            if k not in input_scale_source:
+                input_scale_source[k] = "fp16"
+
+    if add_input_scale and input_scale_map:
+        missing = set(quantize_layers) - set(input_scale_map.keys())
+        if missing:
+            print(
+                f"Warning: input_scale missing for {len(missing)} layers; using fallback." 
+                f"Example: {sorted(missing)[:3]}"
+            )
 
     if dry_run:
         # Calculate estimated sizes - need to load all tensors for accurate size
@@ -2135,6 +2205,14 @@ def convert_to_nvfp4(
         output_metadata["nvfp4_input_scale_from_fp16"] = str(input_scale_from_fp16)
         output_metadata["nvfp4_input_scale_method"] = str(input_scale_method)
         output_metadata["nvfp4_input_scale_samples"] = str(input_scale_samples)
+    if input_scale_summary_json:
+        output_metadata["nvfp4_input_scale_summary_json"] = str(input_scale_summary_json)
+        output_metadata["nvfp4_input_scale_summary_percentile"] = str(
+            input_scale_summary_percentile
+        )
+        output_metadata["nvfp4_input_scale_summary_multiplier"] = str(
+            input_scale_summary_multiplier
+        )
     if preset:
         output_metadata["nvfp4_preset"] = preset
         if classify_info.get("num_layers"):
@@ -2147,6 +2225,17 @@ def convert_to_nvfp4(
         output_metadata["nvfp4_fp8_layers"] = str(stats["fp8_layers"])
 
     save_file(output_tensors, output_path_obj, metadata=output_metadata)
+
+    if input_scale_layer_summary and add_input_scale:
+        print("\n--- Input scale per layer ---")
+        for layer in sorted(quantize_layers):
+            key = f"{layer}.input_scale"
+            if key in output_tensors:
+                try:
+                    val = float(output_tensors[key].item())
+                except Exception:
+                    val = float(output_tensors[key].mean().item())
+                print(f"  {layer}: {val:.6f}")
 
     # Print summary
     print("\n" + "=" * 50)
@@ -2395,6 +2484,33 @@ Supported models:
     )
 
     parser.add_argument(
+        "--input-scale-summary-json",
+        default=None,
+        metavar="PATH",
+        help="Use per-layer input_scale from summary JSON",
+    )
+
+    parser.add_argument(
+        "--input-scale-summary-percentile",
+        type=int,
+        default=99,
+        help="Percentile to use from summary JSON (default: 99)",
+    )
+
+    parser.add_argument(
+        "--input-scale-summary-multiplier",
+        type=float,
+        default=1.0,
+        help="Multiplier applied to summary-derived input_scale values (default: 1.0)",
+    )
+
+    parser.add_argument(
+        "--input-scale-layer-summary",
+        action="store_true",
+        help="Print per-layer input_scale values after conversion",
+    )
+
+    parser.add_argument(
         "--use-ck-quant",
         action="store_true",
         help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
@@ -2464,6 +2580,10 @@ Supported models:
             input_scale_method=args.input_scale_method,
             input_scale_samples=args.input_scale_samples,
             comfyui_root=args.comfyui_root,
+            input_scale_summary_json=args.input_scale_summary_json,
+            input_scale_summary_percentile=args.input_scale_summary_percentile,
+            input_scale_summary_multiplier=args.input_scale_summary_multiplier,
+            input_scale_layer_summary=args.input_scale_layer_summary,
             use_ck_quant=args.use_ck_quant,
             calibrate=args.calibrate,
             calibrate_steps=args.calibrate_steps,
