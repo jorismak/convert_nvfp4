@@ -37,6 +37,21 @@ Examples:
 
   # With basic calibration
   python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --calibrate
+
+    # Disable input_scale tensors (use ComfyUI dynamic quantization)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --no-input-scale
+
+    # Use comfy_kitchen quantizer for exact NVFP4 packing/layout
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --use-ck-quant
+
+    # Fixed input_scale for activations (avoids clamping issues)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-value 48.0
+
+    # Copy input_scale from a reference NVFP4 model (same architecture)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-from ref_nvfp4.safetensors
+
+    # Calibrate input_scale from FP16/FP32 WAN model activations
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-from-fp16 wan_fp16.safetensors
 """
 
 import argparse
@@ -306,7 +321,7 @@ UNSLOTH_WAN_CONFIG = {
 # Quant Test Preset - Matches GGUF Q4_0 quantization layout
 # =============================================================================
 
-# Test preset that exactly replicates GGUF Q4_0 quantization behavior
+# Test preset that exactly replicates GGUF Q4_0/Q4_1 quantization behavior
 # for WAN models to match its quality output.
 #
 # GGUF Q4_0 analysis (WAN 2.2 TI2V 5B):
@@ -315,8 +330,8 @@ UNSLOTH_WAN_CONFIG = {
 #   - Q4_0 (270 tensors): All Q/K/V/O projections + FFN.0 (attention + FFN up)
 #   - Q4_1 (30 tensors): FFN.2 down projections (slightly higher precision)
 #
-# This preset keeps V projections and FFN.2 at BF16 initially for testing,
-# to isolate whether the issue is with quantizing head/embeddings or these layers.
+# NOTE: When used with --gguf, this preset will exactly mirror the GGUF
+# precision choices (Q4_0/Q4_1 -> NVFP4, F16/BF16 -> FP16/BF16, F32 -> FP32).
 
 QUANT_TEST_WAN_SKIP_PATTERNS = [
     # === Critical I/O layers - must stay at BF16 ===
@@ -336,7 +351,7 @@ QUANT_TEST_WAN_CONFIG = {
     "name": "quant-test",
     "type": "static",
     "description": (
-        "Exact GGUF Q4_0 match for WAN models. "
+        "Exact GGUF Q4_0/Q4_1 match for WAN models. "
         "Quantizes Q/K/V/O projections, FFN.0, and FFN.2 to NVFP4. "
         "Keeps only head/embeddings/norms/time at BF16, patch_embedding at F32."
     ),
@@ -582,6 +597,319 @@ def detect_model_type(tensor_names: List[str]) -> Optional[str]:
             return "qwen_image_2512"
 
     return None
+
+
+# =============================================================================
+# Activation Calibration (WAN models)
+# =============================================================================
+
+
+class _ActivationCollector:
+    """Collects input activation statistics for linear layers."""
+
+    def __init__(self):
+        self.amax_values: Dict[str, List[float]] = {}
+        self.hooks = []
+
+    def make_hook(self, name):
+        def hook(module, input, output):
+            x = input[0] if isinstance(input, tuple) else input
+            if x is not None and isinstance(x, torch.Tensor):
+                amax = x.abs().amax().item()
+                self.amax_values.setdefault(name, []).append(amax)
+
+        return hook
+
+    def register_hooks(self, model, layer_names: Set[str]):
+        import torch.nn as nn
+
+        for name, module in model.named_modules():
+            if name in layer_names and isinstance(module, nn.Linear):
+                hook = module.register_forward_hook(self.make_hook(name))
+                self.hooks.append(hook)
+        print(f"Registered {len(self.hooks)} activation hooks")
+
+    def remove_hooks(self):
+        for hook in self.hooks:
+            hook.remove()
+        self.hooks = []
+
+    def get_input_scales(self, method: str = "max") -> Dict[str, float]:
+        input_scales = {}
+        for name, amaxes in self.amax_values.items():
+            if not amaxes:
+                continue
+            if method == "max":
+                amax = max(amaxes)
+            elif method == "mean":
+                amax = sum(amaxes) / len(amaxes)
+            elif method == "percentile_99":
+                sorted_amaxes = sorted(amaxes)
+                idx = int(len(sorted_amaxes) * 0.99)
+                amax = sorted_amaxes[min(idx, len(sorted_amaxes) - 1)]
+            else:
+                raise ValueError(f"Unknown input_scale method: {method}")
+
+            # NVFP4 input quantization scale
+            scale = amax / (F8_E4M3_MAX * F4_E2M1_MAX)
+            input_scales[name] = max(scale, 1e-12)
+
+        return input_scales
+
+
+def _resolve_comfyui_root(user_root: Optional[str]) -> Path:
+    if user_root:
+        return Path(user_root)
+    # Default to parent of this repo (nvfp4-conv -> ComfyUI)
+    return Path(__file__).resolve().parents[1]
+
+
+def _load_state_dict_for_calibration(model_path: str) -> Dict[str, torch.Tensor]:
+    path = Path(model_path)
+    input_type, base_path, index_data = detect_input_type(path)
+    if input_type in ("sharded_index", "sharded_dir") and index_data is not None:
+        tensors, _, _ = load_sharded_tensors(base_path, index_data, device="cpu")
+        return tensors
+
+    if path.suffix == ".safetensors":
+        state_dict = {}
+        with safe_open(path, framework="pt", device="cpu") as f:
+            for key in f.keys():
+                state_dict[key] = f.get_tensor(key)
+        return state_dict
+
+    return torch.load(path, map_location="cpu")
+
+
+def _build_wan_model_for_calibration(
+    model_path: str, device: str, comfyui_root: Optional[str]
+):
+    import sys
+
+    root = _resolve_comfyui_root(comfyui_root)
+    sys.path.insert(0, str(root))
+
+    from comfy.ldm.wan.model import WanModel
+    import comfy.ops as ops
+
+    state_dict = _load_state_dict_for_calibration(model_path)
+
+    hidden_size = state_dict["blocks.0.self_attn.q.weight"].shape[0]
+    num_blocks = (
+        max(int(k.split(".")[1]) for k in state_dict.keys() if k.startswith("blocks."))
+        + 1
+    )
+    text_dim = state_dict["text_embedding.0.weight"].shape[1]
+    ffn_dim = state_dict["blocks.0.ffn.0.weight"].shape[0]
+    in_dim = state_dict["patch_embedding.weight"].shape[1]
+    head_out = state_dict["head.head.weight"].shape[0]
+    out_dim = head_out // 4
+
+    model = WanModel(
+        model_type="t2v",
+        patch_size=(1, 2, 2),
+        in_dim=in_dim,
+        dim=hidden_size,
+        ffn_dim=ffn_dim,
+        text_dim=text_dim,
+        out_dim=out_dim,
+        num_heads=hidden_size // 128,
+        num_layers=num_blocks,
+        dtype=torch.bfloat16,
+        device="cpu",
+        operations=ops.manual_cast,
+    )
+
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    if missing:
+        print(f"  Missing keys during calibration load: {len(missing)}")
+    if unexpected:
+        print(f"  Unexpected keys during calibration load: {len(unexpected)}")
+
+    model = model.to(device=device)
+    model.eval()
+    return model
+
+
+def _run_wan_calibration_passes(
+    model,
+    in_dim: int,
+    num_samples: int,
+    device: str,
+    batch_size: int = 1,
+):
+    text_dim = model.text_dim
+    text_len = 512
+
+    latent_channels = in_dim
+    latent_t = 5
+    latent_h = 30
+    latent_w = 52
+
+    for i in range(num_samples):
+        x = torch.randn(
+            batch_size,
+            latent_channels,
+            latent_t,
+            latent_h,
+            latent_w,
+            device=device,
+            dtype=torch.bfloat16,
+        )
+        timestep = torch.randint(0, 1000, (batch_size,), device=device, dtype=torch.long)
+        context = torch.randn(
+            batch_size, text_len, text_dim, device=device, dtype=torch.bfloat16
+        )
+
+        with torch.no_grad():
+            try:
+                _ = model(x, timestep, context)
+            except Exception as e:
+                print(f"Calibration forward error: {e}")
+                break
+
+        if i % 2 == 0 and device == "cuda":
+            torch.cuda.empty_cache()
+
+
+def compute_input_scales_from_fp16_model(
+    fp16_model_path: str,
+    layer_names: Set[str],
+    method: str,
+    num_samples: int,
+    device: str,
+    comfyui_root: Optional[str],
+) -> Dict[str, torch.Tensor]:
+    print("Computing input_scale from FP16/FP32 WAN model activations...")
+    model = _build_wan_model_for_calibration(fp16_model_path, device, comfyui_root)
+
+    collector = _ActivationCollector()
+    collector.register_hooks(model, layer_names)
+
+    in_dim = model.patch_embedding.weight.shape[1]
+    _run_wan_calibration_passes(model, in_dim, num_samples, device)
+
+    collector.remove_hooks()
+    input_scales = collector.get_input_scales(method=method)
+
+    if not input_scales:
+        print("Warning: No activation scales collected from FP16 model.")
+        return {}
+
+    scale_values = list(input_scales.values())
+    print(
+        f"input_scale range: {min(scale_values):.6f} - {max(scale_values):.6f} "
+        f"(mean {sum(scale_values) / len(scale_values):.6f})"
+    )
+
+    return {k: torch.tensor([v], dtype=torch.float32) for k, v in input_scales.items()}
+
+
+# =============================================================================
+# GGUF Precision Parity Helpers (for quant-test)
+# =============================================================================
+
+
+def load_gguf_tensor_types(gguf_path: str) -> Dict[str, str]:
+    """
+    Load GGUF tensor types by name.
+
+    Returns:
+        Dict mapping tensor name -> GGUF tensor type name (e.g., Q4_0, Q4_1, F16, F32)
+    """
+    try:
+        import gguf  # type: ignore
+    except Exception as e:
+        raise ImportError(
+            "The 'gguf' package is required for --gguf precision parity. "
+            "Install it in your environment and retry."
+        ) from e
+
+    reader = gguf.GGUFReader(gguf_path)
+    gguf_types: Dict[str, str] = {}
+    for tensor in reader.tensors:
+        tensor_type = tensor.tensor_type
+        type_name = tensor_type.name if hasattr(tensor_type, "name") else str(tensor_type)
+        gguf_types[tensor.name] = type_name
+    return gguf_types
+
+
+def classify_layers_from_gguf(
+    tensor_names: List[str],
+    tensors: Dict[str, torch.Tensor],
+    gguf_types: Dict[str, str],
+    verbose: bool = False,
+) -> Tuple[Set[str], Set[str], Set[str], Dict, Set[str]]:
+    """
+    Classify layers using exact GGUF precision choices.
+
+    Returns:
+        (quantize_layers, fp8_layers, skip_layers, info_dict, fp32_keep_names)
+    """
+    q4_types = {"Q4_0", "Q4_1"}
+    f16_types = {"F16", "BF16"}
+    f32_types = {"F32"}
+
+    quantize_layers: Set[str] = set()
+    fp8_layers: Set[str] = set()
+    skip_layers: Set[str] = set()
+    fp32_keep_names: Set[str] = set()
+
+    missing_in_gguf = []
+    q4_non_linear = []
+    unknown_types = []
+
+    # Track FP32 tensors by exact name (can include non-weights)
+    for name, ttype in gguf_types.items():
+        if ttype in f32_types:
+            fp32_keep_names.add(name)
+        elif ttype not in q4_types and ttype not in f16_types:
+            unknown_types.append((name, ttype))
+
+    # Classify only weight tensors for quantization/skip
+    for name in tensor_names:
+        if not name.endswith(".weight"):
+            continue
+
+        if name not in gguf_types:
+            missing_in_gguf.append(name)
+            continue
+
+        ttype = gguf_types[name]
+        if ttype in q4_types:
+            tensor = tensors.get(name)
+            if tensor is not None and tensor.dim() == 2:
+                layer = name[: -len(".weight")]
+                quantize_layers.add(layer)
+            else:
+                q4_non_linear.append(name)
+        elif ttype in f16_types or ttype in f32_types:
+            tensor = tensors.get(name)
+            if tensor is not None and tensor.dim() == 2:
+                layer = name[: -len(".weight")]
+                skip_layers.add(layer)
+
+    info = {
+        "preset": "quant-test",
+        "model_type": None,
+        "num_layers": 0,
+        "gguf_q4_layers": len(quantize_layers),
+        "gguf_f16_layers": len(skip_layers),
+        "gguf_f32_tensors": len(fp32_keep_names),
+        "gguf_missing_in_source": len(missing_in_gguf),
+        "gguf_q4_non_linear": len(q4_non_linear),
+        "gguf_unknown_types": len(unknown_types),
+    }
+
+    if verbose:
+        if missing_in_gguf:
+            print(f"[GGUF] Missing in GGUF (weights): {len(missing_in_gguf)}")
+        if q4_non_linear:
+            print(f"[GGUF] Q4 tensors not 2D weights: {len(q4_non_linear)}")
+        if unknown_types:
+            print(f"[GGUF] Unknown GGUF tensor types: {len(unknown_types)}")
+
+    return quantize_layers, fp8_layers, skip_layers, info, fp32_keep_names
 
 
 # =============================================================================
@@ -1302,6 +1630,15 @@ def convert_to_nvfp4(
     preset: Optional[str] = None,
     exclude_patterns: Optional[List[str]] = None,
     include_patterns: Optional[List[str]] = None,
+    gguf_path: Optional[str] = None,
+    add_input_scale: bool = True,
+    input_scale_value: Optional[float] = None,
+    input_scale_from: Optional[str] = None,
+    input_scale_from_fp16: Optional[str] = None,
+    input_scale_method: str = "max",
+    input_scale_samples: int = 8,
+    comfyui_root: Optional[str] = None,
+    use_ck_quant: bool = False,
     calibrate: bool = False,
     calibrate_steps: int = 8,
     device: str = "cuda",
@@ -1323,6 +1660,15 @@ def convert_to_nvfp4(
         preset: Optional preset name for model-specific settings (e.g., "wan")
         exclude_patterns: Patterns for layers to skip
         include_patterns: Patterns to force include
+        gguf_path: Optional path to GGUF for exact precision parity (quant-test)
+        add_input_scale: Whether to write input_scale tensors for NVFP4 layers
+        input_scale_value: Fixed input_scale value for activations (if not calibrating)
+        input_scale_from: Optional NVFP4 safetensors file to copy input_scale values
+        input_scale_from_fp16: Optional FP16/FP32 WAN model to measure activations
+        input_scale_method: Method for input_scale aggregation (max/mean/percentile_99)
+        input_scale_samples: Number of activation samples to run
+        comfyui_root: Optional ComfyUI root path for WAN model loading
+        use_ck_quant: Use comfy_kitchen quantize_nvfp4 for backend-compatible packing
         calibrate: Whether to run calibration
         calibrate_steps: Number of calibration steps
         device: Device to use (cuda/cpu)
@@ -1341,6 +1687,31 @@ def convert_to_nvfp4(
 
     if not input_path_obj.exists():
         raise FileNotFoundError(f"Input path not found: {input_path}")
+
+    if preset == "quant-test" and not gguf_path:
+        raise ValueError(
+            "Preset 'quant-test' requires --gguf to mirror GGUF precision exactly."
+        )
+    if gguf_path and preset != "quant-test":
+        print("Warning: --gguf is only used with preset 'quant-test'.")
+    if calibrate and not add_input_scale:
+        print("Warning: --calibrate ignored because --no-input-scale was set.")
+    if input_scale_value is not None and not add_input_scale:
+        print("Warning: --input-scale-value ignored because --no-input-scale was set.")
+    if input_scale_from and not add_input_scale:
+        print("Warning: --input-scale-from ignored because --no-input-scale was set.")
+    if input_scale_from_fp16 and not add_input_scale:
+        print("Warning: --input-scale-from-fp16 ignored because --no-input-scale was set.")
+
+    input_scale_map: Dict[str, torch.Tensor] = {}
+
+    ck = None
+    if use_ck_quant:
+        try:
+            import comfy_kitchen as ck  # type: ignore
+        except Exception:
+            print("Warning: comfy_kitchen not available; falling back to local quantizer.")
+            use_ck_quant = False
 
     # Setup device and dtype
     if device == "cuda" and not torch.cuda.is_available():
@@ -1406,15 +1777,25 @@ def convert_to_nvfp4(
                 tensors[name] = f.get_tensor(name)
 
     # Classify layers
-    quantize_layers, fp8_layers, skip_layers, classify_info = classify_layers(
-        tensor_names,
-        tensors,
-        mode,
-        preset,
-        exclude_patterns or [],
-        include_patterns or [],
-        use_fp8,
-    )
+    fp32_keep_names: Set[str] = set()
+    if preset == "quant-test" and gguf_path:
+        gguf_types = load_gguf_tensor_types(gguf_path)
+        quantize_layers, fp8_layers, skip_layers, classify_info, fp32_keep_names = (
+            classify_layers_from_gguf(tensor_names, tensors, gguf_types, verbose)
+        )
+        print(
+            f"GGUF parity mode: Q4_0/Q4_1 -> NVFP4, F16/BF16 -> {dtype}, F32 -> FP32"
+        )
+    else:
+        quantize_layers, fp8_layers, skip_layers, classify_info = classify_layers(
+            tensor_names,
+            tensors,
+            mode,
+            preset,
+            exclude_patterns or [],
+            include_patterns or [],
+            use_fp8,
+        )
 
     # Print preset info if used
     if preset and classify_info.get("num_layers"):
@@ -1453,6 +1834,26 @@ def convert_to_nvfp4(
             weight = tensors.get(f"{layer}.weight")
             if weight is not None:
                 print(f"  {layer}: {tuple(weight.shape)} (Linear, skipped)")
+
+    if add_input_scale and input_scale_from_fp16:
+        input_scale_map = compute_input_scales_from_fp16_model(
+            input_scale_from_fp16,
+            set(quantize_layers),
+            input_scale_method,
+            input_scale_samples,
+            device,
+            comfyui_root,
+        )
+
+    if add_input_scale and input_scale_from:
+        input_scale_path = Path(input_scale_from)
+        if not input_scale_path.exists():
+            raise FileNotFoundError(f"Input scale source not found: {input_scale_from}")
+        with safe_open(input_scale_path, framework="pt", device="cpu") as f:
+            for name in f.keys():
+                if name.endswith(".input_scale"):
+                    base = name[: -len(".input_scale")]
+                    input_scale_map[base] = f.get_tensor(name).to(torch.float32)
 
     if dry_run:
         # Calculate estimated sizes - need to load all tensors for accurate size
@@ -1523,10 +1924,8 @@ def convert_to_nvfp4(
     processed_layer_tensors = set()
     for layer in quantize_layers:
         processed_layer_tensors.add(f"{layer}.weight")
-        processed_layer_tensors.add(f"{layer}.bias")
     for layer in fp8_layers:
         processed_layer_tensors.add(f"{layer}.weight")
-        processed_layer_tensors.add(f"{layer}.bias")
 
     print("\nQuantizing layers...")
 
@@ -1546,7 +1945,19 @@ def convert_to_nvfp4(
 
         # Quantize (internally converts to FP32 for precise quantization math)
         try:
-            quantized_weight, block_scale, tensor_scale = quantize_nvfp4(weight_device)
+            if use_ck_quant and ck is not None:
+                # Compute per-tensor scale in FP32 for accuracy
+                tensor_scale = torch.amax(weight.float().abs()) / (
+                    F8_E4M3_MAX * F4_E2M1_MAX
+                )
+                tensor_scale = tensor_scale.to(torch.float32)
+
+                # comfy_kitchen handles padding and blocked scale layout internally
+                quantized_weight, block_scale = ck.quantize_nvfp4(
+                    weight_device, tensor_scale, pad_16x=True
+                )
+            else:
+                quantized_weight, block_scale, tensor_scale = quantize_nvfp4(weight_device)
         except Exception as e:
             print(f"\nWarning: Failed to quantize {layer}: {e}")
             print(f"  Keeping original weight")
@@ -1566,34 +1977,31 @@ def convert_to_nvfp4(
         # Track layer for _quantization_metadata
         quantized_layer_configs[layer] = {"format": "nvfp4"}
 
-        # CRITICAL: Always add input_scale for NVFP4 layers
-        # Without it, ComfyUI uses dynamic quantization which causes noise/instability
-        if calibrate:
-            # Use calibration for accurate input_scale (measures actual activation range)
-            input_scale = calibrate_layer(
-                weight_device,
-                num_steps=calibrate_steps,
-            )
-            output_tensors[f"{layer}.input_scale"] = input_scale.cpu()
-            stats["calibrated_layers"] += 1
-        else:
-            # Use a reasonable default based on typical activation statistics
-            # Neural network activations after normalization are typically in range [-10, 10]
-            # with most values concentrated around [-3, 3] (std ~1.0)
-            #
-            # We use a conservative estimate: assume activation amax ~= 10.0
-            # Formula: input_scale = amax / (F8_E4M3_MAX * F4_E2M1_MAX) = 10.0 / 2688.0
-            #
-            # This is much larger than weight-based estimates (~0.0001) and closer to
-            # Flux NVFP4's calibrated values (mean ~0.097, range 0.004-2.27)
-            activation_amax_estimate = (
-                10.0  # Conservative estimate for normalized activations
-            )
-            input_scale_value = activation_amax_estimate / (F8_E4M3_MAX * F4_E2M1_MAX)
-            input_scale = torch.tensor(
-                [input_scale_value], dtype=torch.float32, device="cpu"
-            )
-            output_tensors[f"{layer}.input_scale"] = input_scale
+        # Optional: add input_scale for NVFP4 layers
+        if add_input_scale:
+            # Without it, ComfyUI may use dynamic quantization (can be unstable)
+            if calibrate:
+                # Use calibration for accurate input_scale (measures actual activation range)
+                input_scale = calibrate_layer(
+                    weight_device,
+                    num_steps=calibrate_steps,
+                )
+                output_tensors[f"{layer}.input_scale"] = input_scale.cpu()
+                stats["calibrated_layers"] += 1
+            else:
+                if layer in input_scale_map:
+                    output_tensors[f"{layer}.input_scale"] = input_scale_map[layer]
+                    continue
+                if input_scale_value is None:
+                    # Fallback heuristic (kept for compatibility)
+                    activation_amax_estimate = 10.0
+                    input_scale_value = activation_amax_estimate / (
+                        F8_E4M3_MAX * F4_E2M1_MAX
+                    )
+                input_scale = torch.tensor(
+                    [input_scale_value], dtype=torch.float32, device="cpu"
+                )
+                output_tensors[f"{layer}.input_scale"] = input_scale
 
         # Copy bias if exists
         if bias_name in tensors:
@@ -1665,7 +2073,9 @@ def convert_to_nvfp4(
         fp32_keep_patterns = preset_config.get("fp32_keep_patterns", [])
 
     def should_keep_fp32(tensor_name: str) -> bool:
-        """Check if tensor should stay in FP32 based on preset patterns."""
+        """Check if tensor should stay in FP32 based on preset patterns or GGUF parity."""
+        if tensor_name in fp32_keep_names:
+            return True
         for pattern in fp32_keep_patterns:
             if re.search(pattern, tensor_name):
                 return True
@@ -1718,6 +2128,14 @@ def convert_to_nvfp4(
     output_metadata["nvfp4_mode"] = mode
     output_metadata["nvfp4_quant_dtype"] = quant_dtype  # Track quantization input dtype
     output_metadata["nvfp4_quantized_layers"] = str(stats["quantized_layers"])
+    if gguf_path:
+        output_metadata["nvfp4_gguf"] = str(gguf_path)
+    if input_scale_from:
+        output_metadata["nvfp4_input_scale_from"] = str(input_scale_from)
+    if input_scale_from_fp16:
+        output_metadata["nvfp4_input_scale_from_fp16"] = str(input_scale_from_fp16)
+        output_metadata["nvfp4_input_scale_method"] = str(input_scale_method)
+        output_metadata["nvfp4_input_scale_samples"] = str(input_scale_samples)
     if preset:
         output_metadata["nvfp4_preset"] = preset
         if classify_info.get("num_layers"):
@@ -1792,6 +2210,13 @@ Examples:
   # Use Unsloth-derived preset for any Wan model (best quality)
   python convert_nvfp4.py wan_model.safetensors wan_nvfp4.safetensors --preset unsloth-wan
 
+    # Exact GGUF parity for Wan 2.2 TI2V (Q4_0/Q4_1 -> NVFP4, F16 -> BF16, F32 -> FP32)
+    python convert_nvfp4.py \
+            "D:\\comfy2\\ComfyUI\\nvfp4-conv\\wan2.2-ti2v-5b\\diffusion_pytorch_model.safetensors.index.json" \
+            "D:\\ComfyUI\\ComfyUI\\models\\diffusion_models\\wan2.2-ti2v-5b-nvfp4-quant-test.safetensors" \
+            --preset quant-test \
+            --gguf "D:\\ComfyUI\\ComfyUI\\models\\diffusion_models\\Wan2.2-TI2V-5B-Q4_0.gguf"
+
   # Mixed precision: NVFP4 + FP8 for intermediate layers (better quality)
   python convert_nvfp4.py wan_model.safetensors wan_mixed.safetensors --preset unsloth-wan --use-fp8
 
@@ -1847,6 +2272,7 @@ Presets:
                     Quantizes Q/K/V/O projections, FFN.0, and FFN.2 to NVFP4.
                     Keeps only head/embeddings/norms/time at BF16, patch_embedding at F32.
                     Use this to exactly replicate GGUF Q4_0 quantization layout.
+                    NOTE: Requires --gguf to mirror GGUF precision exactly.
 
 Mixed Precision (--use-fp8):
   When using --use-fp8 with smart or Unsloth-derived presets, layers are quantized as:
@@ -1893,6 +2319,13 @@ Supported models:
     )
 
     parser.add_argument(
+        "--gguf",
+        default=None,
+        metavar="PATH",
+        help="Path to GGUF file for exact precision parity (required for 'quant-test').",
+    )
+
+    parser.add_argument(
         "--exclude",
         action="append",
         default=[],
@@ -1912,6 +2345,60 @@ Supported models:
         "--calibrate",
         action="store_true",
         help="Enable basic calibration for input_scale",
+    )
+
+    parser.add_argument(
+        "--no-input-scale",
+        action="store_true",
+        help="Do not write input_scale tensors for NVFP4 layers",
+    )
+
+    parser.add_argument(
+        "--input-scale-value",
+        type=float,
+        default=None,
+        help="Fixed input_scale value for activations (used when not calibrating)",
+    )
+
+    parser.add_argument(
+        "--input-scale-from",
+        default=None,
+        metavar="PATH",
+        help="Copy input_scale tensors from a reference NVFP4 safetensors file",
+    )
+
+    parser.add_argument(
+        "--input-scale-from-fp16",
+        default=None,
+        metavar="PATH",
+        help="Calibrate input_scale from FP16/FP32 WAN model activations",
+    )
+
+    parser.add_argument(
+        "--input-scale-method",
+        choices=["max", "mean", "percentile_99"],
+        default="max",
+        help="Method for input_scale aggregation (default: max)",
+    )
+
+    parser.add_argument(
+        "--input-scale-samples",
+        type=int,
+        default=8,
+        help="Number of activation samples for input_scale calibration",
+    )
+
+    parser.add_argument(
+        "--comfyui-root",
+        default=None,
+        metavar="PATH",
+        help="Path to ComfyUI root for WAN model loading (optional)",
+    )
+
+    parser.add_argument(
+        "--use-ck-quant",
+        action="store_true",
+        help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
     )
 
     parser.add_argument(
@@ -1970,6 +2457,15 @@ Supported models:
             preset=args.preset,
             exclude_patterns=args.exclude,
             include_patterns=args.include,
+            gguf_path=args.gguf,
+            add_input_scale=not args.no_input_scale,
+            input_scale_value=args.input_scale_value,
+            input_scale_from=args.input_scale_from,
+            input_scale_from_fp16=args.input_scale_from_fp16,
+            input_scale_method=args.input_scale_method,
+            input_scale_samples=args.input_scale_samples,
+            comfyui_root=args.comfyui_root,
+            use_ck_quant=args.use_ck_quant,
             calibrate=args.calibrate,
             calibrate_steps=args.calibrate_steps,
             device=args.device,
