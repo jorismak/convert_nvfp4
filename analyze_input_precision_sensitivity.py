@@ -9,7 +9,7 @@ most sensitive to input precision.
 
 Usage:
   python analyze_input_precision_sensitivity.py \
-      --fp16-model D:\ComfyUI\ComfyUI\models\diffusion_models\wan2.2_ti2v_5B_fp16.safetensors \
+      --fp16-model D:\\ComfyUI\\ComfyUI\\models\\diffusion_models\\wan2.2_ti2v_5B_fp16.safetensors \
       --samples 6 \
       --input-scale-summary-json nvfp4_scales_summary.json \
       --input-scale-summary-percentile 99 \
