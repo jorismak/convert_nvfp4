@@ -35,9 +35,6 @@ Examples:
   # Preview what would be quantized
   python convert_nvfp4.py model.safetensors output.safetensors --dry-run
 
-  # With basic calibration
-  python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --calibrate
-
     # Disable input_scale tensors (use ComfyUI dynamic quantization)
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --no-input-scale
 
@@ -51,7 +48,7 @@ Examples:
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-from ref_nvfp4.safetensors
 
     # Calibrate input_scale from FP16/FP32 WAN model activations
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-from-fp16 wan_fp16.safetensors
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --calibrate-from-fp16 wan_fp16.safetensors
 
     # Use per-layer input_scale from summary JSON (from analyze_input_scale_log.py)
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-summary-json nvfp4_scales_summary.json --input-scale-summary-percentile 99
@@ -208,208 +205,8 @@ QWEN_IMAGE_EDIT_PRESET_CONFIG = {
 }
 
 # =============================================================================
-# Unsloth-derived presets (based on GGUF quantization analysis)
+# Smart Preset - Auto-detects model architecture and applies heuristic rules
 # =============================================================================
-
-# Unsloth Qwen Image Edit 2511 preset - derived from Q4_K_M GGUF analysis
-# Skip patterns based on layers that Unsloth kept at Q6_K or higher precision
-# Layers at Q4_K/Q5_K will be quantized to NVFP4, Q6_K+ kept at FP16 (or FP8 with --use-fp8)
-#
-# GGUF analysis summary:
-#   Q4_K (560 tensors): Most Q/K/out projections, mlp.net.0, mods for blocks 2-57
-#   Q5_K (20 tensors): Block 1 and 58 (transition blocks)
-#   Q6_K (258 tensors): All V projections, mlp.net.2, entire blocks 0 and 59
-#   Q8_0 (2 tensors): Block 0 and 59 img_mod
-#   BF16 (6 tensors): img_in, txt_in, proj_out, norm_out, timestep_embed
-#
-# With --use-fp8: Q6_K and Q8_0 layers become FP8 instead of FP16
-
-# Patterns for layers that MUST stay at FP16 (BF16 in GGUF - I/O layers)
-UNSLOTH_QWEN_IMAGE_EDIT_2511_SKIP_PATTERNS = [
-    r"^img_in\b",  # Image input projection
-    r"^txt_in\b",  # Text input projection
-    r"^proj_out\b",  # Final output projection
-    r"^norm_out\b",  # Output normalization
-    r"^time_text_embed\.",  # Timestep embeddings
-]
-
-# Patterns for layers that can be FP8 (Q6_K/Q8_0 in GGUF)
-# Without --use-fp8, these are also skipped (kept at FP16)
-UNSLOTH_QWEN_IMAGE_EDIT_2511_FP8_PATTERNS = [
-    # === First block (block 0) - all weights were Q6_K/Q8_0 ===
-    r"^transformer_blocks\.0\.",
-    # === Last block (block 59) - all weights were Q6_K/Q8_0 ===
-    r"^transformer_blocks\.59\.",
-    # === V projections - ALL blocks kept at Q6_K ===
-    r"\.attn\.to_v\b",  # Image V projection
-    r"\.attn\.add_v_proj\b",  # Text V projection
-    # === MLP down projections - ALL blocks kept at Q6_K ===
-    r"\.img_mlp\.net\.2\b",  # Image MLP down projection
-    r"\.txt_mlp\.net\.2\b",  # Text MLP down projection
-]
-
-UNSLOTH_QWEN_IMAGE_EDIT_2511_CONFIG = {
-    "name": "unsloth-qwen-image-edit-2511",
-    "type": "static",  # Static preset - hardcoded patterns, not dynamic
-    "description": (
-        "Derived from Unsloth's Q4_K_M quantization. "
-        "Skips V projections, MLP down projections, first/last blocks, and I/O layers."
-    ),
-    "skip_patterns": UNSLOTH_QWEN_IMAGE_EDIT_2511_SKIP_PATTERNS,
-    "fp8_patterns": UNSLOTH_QWEN_IMAGE_EDIT_2511_FP8_PATTERNS,
-    # Tensors to keep in FP32 (not convert to BF16) - matches GGUF behavior
-    "fp32_keep_patterns": [
-        r"\.bias$",  # All biases - GGUF keeps these F32
-    ],
-}
-
-# Unsloth Qwen Image 2512 preset - derived from Q5_K_S GGUF analysis
-# Skip patterns based on layers that Unsloth kept at Q6_K or higher precision
-# Layers at Q5_K will be quantized to NVFP4, Q6_K+ kept at FP16 (or FP8 with --use-fp8)
-#
-# GGUF analysis summary:
-#   Q5_K (784 tensors): All layers in blocks 2-57
-#   Q6_K (56 tensors): Entire blocks 0, 1, 58, 59 (first 2 + last 2)
-#   BF16 (6 tensors): img_in, txt_in, proj_out, norm_out, timestep_embed
-#
-# With --use-fp8: Q6_K layers (blocks 0,1,58,59) become FP8 instead of FP16
-
-# Patterns for layers that MUST stay at FP16 (BF16 in GGUF - I/O layers)
-UNSLOTH_QWEN_IMAGE_2512_SKIP_PATTERNS = [
-    r"^img_in\b",  # Image input projection
-    r"^txt_in\b",  # Text input projection
-    r"^proj_out\b",  # Final output projection
-    r"^norm_out\b",  # Output normalization
-    r"^time_text_embed\.",  # Timestep embeddings
-]
-
-# Patterns for layers that can be FP8 (Q6_K in GGUF)
-# Without --use-fp8, these are also skipped (kept at FP16)
-UNSLOTH_QWEN_IMAGE_2512_FP8_PATTERNS = [
-    # === First 2 blocks (blocks 0, 1) - all weights were Q6_K ===
-    r"^transformer_blocks\.0\.",
-    r"^transformer_blocks\.1\.",
-    # === Last 2 blocks (blocks 58, 59) - all weights were Q6_K ===
-    r"^transformer_blocks\.58\.",
-    r"^transformer_blocks\.59\.",
-]
-
-UNSLOTH_QWEN_IMAGE_2512_CONFIG = {
-    "name": "unsloth-qwen-image-2512",
-    "type": "static",  # Static preset - hardcoded patterns, not dynamic
-    "description": (
-        "Derived from Unsloth's Q5_K_S quantization. "
-        "Skips first/last 2 blocks and I/O layers."
-    ),
-    "skip_patterns": UNSLOTH_QWEN_IMAGE_2512_SKIP_PATTERNS,
-    "fp8_patterns": UNSLOTH_QWEN_IMAGE_2512_FP8_PATTERNS,
-    # Tensors to keep in FP32 (not convert to BF16) - matches GGUF behavior
-    "fp32_keep_patterns": [
-        r"\.bias$",  # All biases - GGUF keeps these F32
-    ],
-}
-
-# Unsloth Wan preset - derived from Q5_K_M GGUF analysis
-# Skip patterns based on layers that Unsloth kept at Q6_K or higher precision
-# Layers at Q5_K will be quantized to NVFP4, Q6_K+ kept at FP16 (or FP8 with --use-fp8)
-#
-# GGUF analysis summary (identical pattern across all Wan models):
-#   14B (40 blocks): Q5_K=280, Q6_K=120
-#   5B (30 blocks):  Q5_K=210, Q6_K=90
-#   Pattern: 7 tensors/block quantized, 3 tensors/block skipped
-#
-#   Q5_K: Q, K, O projections + ffn.0 (up proj) for all blocks
-#   Q6_K: V projections (self_attn.v, cross_attn.v) + ffn.2 (down proj) for all blocks
-#   F16: All biases, norms, modulation (1D tensors)
-#   F32: patch_embedding.weight (Conv3d)
-#
-# With --use-fp8: Q6_K layers (V proj, ffn.2) become FP8 instead of FP16
-# Works for ALL Wan models: 2.1, 2.2, 5B, 14B, T2V, I2V, TI2V, MAGREF, etc.
-
-# Patterns for layers that MUST stay at FP16 (F16/F32 in GGUF)
-# For Wan, all the F16 layers are biases/norms (1D) which we don't quantize anyway
-# So no explicit skip patterns needed - they're handled by is_linear_weight check
-UNSLOTH_WAN_SKIP_PATTERNS = []
-
-# Patterns for layers that can be FP8 (Q6_K in GGUF)
-# Without --use-fp8, these are also skipped (kept at FP16)
-UNSLOTH_WAN_FP8_PATTERNS = [
-    # === V projections - ALL blocks kept at Q6_K ===
-    r"\.self_attn\.v\b",  # Self-attention V projection
-    r"\.cross_attn\.v\b",  # Cross-attention V projection
-    # === FFN down projections - ALL blocks kept at Q6_K ===
-    r"\.ffn\.2\b",  # FFN down projection (ffn.2.weight)
-]
-
-UNSLOTH_WAN_CONFIG = {
-    "name": "unsloth-wan",
-    "type": "static",  # Static preset - hardcoded patterns, not dynamic
-    "description": (
-        "Derived from Unsloth's Q5_K_M quantization for Wan models. "
-        "Skips V projections and FFN down projections. Works for all Wan variants."
-    ),
-    "skip_patterns": UNSLOTH_WAN_SKIP_PATTERNS,
-    "fp8_patterns": UNSLOTH_WAN_FP8_PATTERNS,
-    # Tensors to keep in FP32 (not convert to BF16) - matches GGUF behavior
-    "fp32_keep_patterns": [
-        r"^patch_embedding\.weight$",  # Input Conv3d - GGUF keeps this F32
-    ],
-}
-
-# =============================================================================
-# Quant Test Preset - Matches GGUF Q4_0 quantization layout
-# =============================================================================
-
-# Test preset that exactly replicates GGUF Q4_0/Q4_1 quantization behavior
-# for WAN models to match its quality output.
-#
-# GGUF Q4_0 analysis (WAN 2.2 TI2V 5B):
-#   - F32 (1 tensor): patch_embedding.weight only
-#   - F16 (524 tensors): All biases, norms, modulation, head, embeddings, time layers
-#   - Q4_0 (270 tensors): All Q/K/V/O projections + FFN.0 (attention + FFN up)
-#   - Q4_1 (30 tensors): FFN.2 down projections (slightly higher precision)
-#
-# NOTE: When used with --gguf, this preset will exactly mirror the GGUF
-# precision choices (Q4_0/Q4_1 -> NVFP4, F16/BF16 -> FP16/BF16, F32 -> FP32).
-
-QUANT_TEST_WAN_SKIP_PATTERNS = [
-    # === Critical I/O layers - must stay at BF16 ===
-    r"^head\.head\b",  # Output projection head
-    r"^text_embedding\.",  # Text input embeddings
-    r"^time_embedding\.",  # Time conditioning
-    r"^time_projection\.",  # Time projection
-    # === Normalization layers - stay at BF16 ===
-    r"\.norm.*\.weight$",  # All norm layers (norm3, norm_k, norm_q)
-    # === Modulation parameters - stay at BF16 ===
-    r"\.modulation$",  # Adaptive norm modulation
-    # NOTE: V projections and FFN.2 are NOT skipped - GGUF Q4_0 quantizes them to Q4_0/Q4_1
-    # We quantize them to NVFP4 to match GGUF exactly
-]
-
-QUANT_TEST_WAN_CONFIG = {
-    "name": "quant-test",
-    "type": "static",
-    "description": (
-        "Exact GGUF Q4_0/Q4_1 match for WAN models. "
-        "Quantizes Q/K/V/O projections, FFN.0, and FFN.2 to NVFP4. "
-        "Keeps only head/embeddings/norms/time at BF16, patch_embedding at F32."
-    ),
-    "skip_patterns": QUANT_TEST_WAN_SKIP_PATTERNS,
-    "fp8_patterns": [],  # No FP8 - everything is either NVFP4 or BF16
-    "fp32_keep_patterns": [r"^patch_embedding\.weight$"],
-}
-
-# =============================================================================
-# Smart Preset - Auto-detects model architecture and applies Unsloth-like rules
-# =============================================================================
-
-# The "smart" preset learns from Unsloth's quantization patterns:
-# 1. V projections (value in attention) → FP8 (they aggregate info, sensitive to precision)
-# 2. Down projections (gate before residual) → FP8 (final bottleneck, quality-critical)
-# 3. I/O layers (embeddings, heads, norms) → FP16 (always preserved)
-# 4. Everything else → NVFP4 (Q, K, O projections, up projections, etc.)
-#
-# This is a "smart" preset that auto-detects common layer naming patterns.
 
 # Common patterns for V projections across architectures
 SMART_V_PROJECTION_PATTERNS = [
@@ -482,7 +279,7 @@ SMART_PRESET_CONFIG = {
     "name": "smart",
     "type": "smart",  # Special type - dynamically generates patterns
     "description": (
-        "Auto-detects model architecture and applies Unsloth-like quantization. "
+        "Auto-detects model architecture and applies heuristic quantization. "
         "V projections and down projections → FP8, I/O layers → FP16, rest → NVFP4."
     ),
     "skip_patterns": SMART_IO_SKIP_PATTERNS,
@@ -495,10 +292,6 @@ PRESETS = {
     "wan": WAN_PRESET_CONFIG,
     "qwen-image": QWEN_IMAGE_PRESET_CONFIG,
     "qwen-image-edit": QWEN_IMAGE_EDIT_PRESET_CONFIG,
-    "unsloth-qwen-image-edit-2511": UNSLOTH_QWEN_IMAGE_EDIT_2511_CONFIG,
-    "unsloth-qwen-image-2512": UNSLOTH_QWEN_IMAGE_2512_CONFIG,
-    "unsloth-wan": UNSLOTH_WAN_CONFIG,
-    "quant-test": QUANT_TEST_WAN_CONFIG,
 }
 
 
@@ -518,51 +311,6 @@ def get_preset_skip_patterns(
         - fp8_patterns: Patterns for layers that can be FP8 (or FP16 if --use-fp8 not set)
     """
     if preset_name not in PRESETS:
-        raise ValueError(
-            f"Unknown preset: {preset_name}. Available: {list(PRESETS.keys())}"
-        )
-
-    config = PRESETS[preset_name]
-
-    # Handle static and smart presets (hardcoded patterns, no dynamic generation)
-    if config.get("type") in ("static", "smart"):
-        skip_patterns = list(config.get("skip_patterns", []))
-        fp8_patterns = list(config.get("fp8_patterns", []))
-        return skip_patterns, fp8_patterns
-
-    # Dynamic presets - generate patterns based on num_layers
-    # Dynamic presets don't have FP8 patterns (they were designed before this feature)
-    patterns = list(config.get("extra_skip_patterns", []))
-
-    # Get block prefix (different models use different naming)
-    block_prefix = config.get("block_prefix", "blocks")
-
-    # Generate block skip patterns based on num_layers
-    skip_first = config.get("skip_first_n_blocks", 0)
-    skip_last = config.get("skip_last_n_blocks", 0)
-
-    if skip_first > 0:
-        # Pattern to match first N blocks
-        first_blocks = "|".join(str(i) for i in range(skip_first))
-        patterns.append(rf".*{block_prefix}\.({first_blocks})\..*")
-
-    if skip_last > 0:
-        # Pattern to match last N blocks
-        last_block_indices = [num_layers - 1 - i for i in range(skip_last)]
-        last_blocks = "|".join(str(i) for i in sorted(last_block_indices))
-        patterns.append(rf".*{block_prefix}\.({last_blocks})\..*")
-
-    return patterns, []  # Dynamic presets have no FP8 patterns
-
-
-def detect_num_layers(tensor_names: List[str]) -> int:
-    """
-    Detect the number of transformer blocks from tensor names.
-    Supports both Wan-style (blocks.N) and Qwen-style (transformer_blocks.N).
-
-    Args:
-        tensor_names: List of tensor names in the model
-
     Returns:
         Number of blocks detected
     """
@@ -860,7 +608,7 @@ def compute_input_scales_from_fp16_model(
 
 
 # =============================================================================
-# GGUF Precision Parity Helpers (for quant-test)
+# GGUF Precision Mapping Helpers
 # =============================================================================
 
 
@@ -888,19 +636,34 @@ def load_gguf_tensor_types(gguf_path: str) -> Dict[str, str]:
     return gguf_types
 
 
+def _gguf_bitdepth(tensor_type: str) -> Optional[int]:
+    match = re.search(r"Q(\d+)", tensor_type)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
 def classify_layers_from_gguf(
     tensor_names: List[str],
     tensors: Dict[str, torch.Tensor],
     gguf_types: Dict[str, str],
+    nvfp4_max_bitdepth: int,
     verbose: bool = False,
 ) -> Tuple[Set[str], Set[str], Set[str], Dict, Set[str]]:
     """
-    Classify layers using exact GGUF precision choices.
+    Classify layers using GGUF precision choices with NVFP4/FP8 mapping by bitdepth.
+
+    Mapping:
+      - F32 -> keep FP32
+      - F16/BF16 -> keep FP16/BF16
+      - Qn -> NVFP4 if n <= nvfp4_max_bitdepth, else FP8
 
     Returns:
         (quantize_layers, fp8_layers, skip_layers, info_dict, fp32_keep_names)
     """
-    q4_types = {"Q4_0", "Q4_1"}
     f16_types = {"F16", "BF16"}
     f32_types = {"F32"}
 
@@ -910,14 +673,15 @@ def classify_layers_from_gguf(
     fp32_keep_names: Set[str] = set()
 
     missing_in_gguf = []
-    q4_non_linear = []
+    non_linear = []
     unknown_types = []
+    bitdepth_counts: Dict[int, int] = {}
 
     # Track FP32 tensors by exact name (can include non-weights)
     for name, ttype in gguf_types.items():
         if ttype in f32_types:
             fp32_keep_names.add(name)
-        elif ttype not in q4_types and ttype not in f16_types:
+        elif ttype not in f16_types and _gguf_bitdepth(ttype) is None:
             unknown_types.append((name, ttype))
 
     # Classify only weight tensors for quantization/skip
@@ -930,36 +694,48 @@ def classify_layers_from_gguf(
             continue
 
         ttype = gguf_types[name]
-        if ttype in q4_types:
-            tensor = tensors.get(name)
-            if tensor is not None and tensor.dim() == 2:
-                layer = name[: -len(".weight")]
+        bitdepth = _gguf_bitdepth(ttype)
+        tensor = tensors.get(name)
+        if tensor is None or tensor.dim() != 2:
+            non_linear.append(name)
+            continue
+
+        layer = name[: -len(".weight")]
+
+        if ttype in f16_types or ttype in f32_types:
+            skip_layers.add(layer)
+            continue
+
+        if bitdepth is not None:
+            bitdepth_counts[bitdepth] = bitdepth_counts.get(bitdepth, 0) + 1
+            if bitdepth <= nvfp4_max_bitdepth:
                 quantize_layers.add(layer)
             else:
-                q4_non_linear.append(name)
-        elif ttype in f16_types or ttype in f32_types:
-            tensor = tensors.get(name)
-            if tensor is not None and tensor.dim() == 2:
-                layer = name[: -len(".weight")]
-                skip_layers.add(layer)
+                fp8_layers.add(layer)
+            continue
+
+        unknown_types.append((name, ttype))
 
     info = {
-        "preset": "quant-test",
+        "preset": "gguf",
         "model_type": None,
         "num_layers": 0,
-        "gguf_q4_layers": len(quantize_layers),
-        "gguf_f16_layers": len(skip_layers),
+        "gguf_nvfp4_layers": len(quantize_layers),
+        "gguf_fp8_layers": len(fp8_layers),
+        "gguf_fp16_layers": len(skip_layers),
         "gguf_f32_tensors": len(fp32_keep_names),
         "gguf_missing_in_source": len(missing_in_gguf),
-        "gguf_q4_non_linear": len(q4_non_linear),
+        "gguf_non_linear": len(non_linear),
         "gguf_unknown_types": len(unknown_types),
+        "gguf_bitdepth_counts": bitdepth_counts,
+        "gguf_nvfp4_max_bitdepth": nvfp4_max_bitdepth,
     }
 
     if verbose:
         if missing_in_gguf:
             print(f"[GGUF] Missing in GGUF (weights): {len(missing_in_gguf)}")
-        if q4_non_linear:
-            print(f"[GGUF] Q4 tensors not 2D weights: {len(q4_non_linear)}")
+        if non_linear:
+            print(f"[GGUF] Non-linear or non-2D weights: {len(non_linear)}")
         if unknown_types:
             print(f"[GGUF] Unknown GGUF tensor types: {len(unknown_types)}")
 
@@ -1685,10 +1461,12 @@ def convert_to_nvfp4(
     exclude_patterns: Optional[List[str]] = None,
     include_patterns: Optional[List[str]] = None,
     gguf_path: Optional[str] = None,
+    gguf_nvfp4_max_bitdepth: int = 4,
+    min_ffn_fp8: bool = False,
     add_input_scale: bool = True,
     input_scale_value: Optional[float] = None,
     input_scale_from: Optional[str] = None,
-    input_scale_from_fp16: Optional[str] = None,
+    calibrate_from_fp16: Optional[str] = None,
     input_scale_method: str = "max",
     input_scale_samples: int = 8,
     comfyui_root: Optional[str] = None,
@@ -1705,8 +1483,6 @@ def convert_to_nvfp4(
     full_precision_mm_ffn_up: bool = False,
     full_precision_mm_ffn_down: bool = False,
     use_ck_quant: bool = False,
-    calibrate: bool = False,
-    calibrate_steps: int = 8,
     device: str = "cuda",
     dtype: str = "bfloat16",
     quant_dtype: str = "bfloat16",
@@ -1726,11 +1502,13 @@ def convert_to_nvfp4(
         preset: Optional preset name for model-specific settings (e.g., "wan")
         exclude_patterns: Patterns for layers to skip
         include_patterns: Patterns to force include
-        gguf_path: Optional path to GGUF for exact precision parity (quant-test)
+        gguf_path: Optional path to GGUF for precision mapping
+        gguf_nvfp4_max_bitdepth: Bitdepth threshold for NVFP4 (Qn <= threshold -> NVFP4, else FP8)
+        min_ffn_fp8: Ensure FFN up/down (ffn.0/ffn.2) are at least FP8
         add_input_scale: Whether to write input_scale tensors for NVFP4 layers
         input_scale_value: Fixed input_scale value for activations (if not calibrating)
         input_scale_from: Optional NVFP4 safetensors file to copy input_scale values
-        input_scale_from_fp16: Optional FP16/FP32 WAN model to measure activations
+        calibrate_from_fp16: Optional FP16/FP32 WAN model to measure activations
         input_scale_method: Method for input_scale aggregation (max/mean/percentile_99)
         input_scale_samples: Number of activation samples to run
         comfyui_root: Optional ComfyUI root path for WAN model loading
@@ -1747,8 +1525,6 @@ def convert_to_nvfp4(
         full_precision_mm_ffn_up: Force full-precision for FFN up projections (ffn.0) (WAN models)
         full_precision_mm_ffn_down: Force full-precision for FFN down projections (ffn.2) (WAN models)
         use_ck_quant: Use comfy_kitchen quantize_nvfp4 for backend-compatible packing
-        calibrate: Whether to run calibration
-        calibrate_steps: Number of calibration steps
         device: Device to use (cuda/cpu)
         dtype: Output dtype for non-quantized tensors (bfloat16/float16)
         quant_dtype: Input dtype for quantization (bfloat16/float16/float32).
@@ -1766,20 +1542,16 @@ def convert_to_nvfp4(
     if not input_path_obj.exists():
         raise FileNotFoundError(f"Input path not found: {input_path}")
 
-    if preset == "quant-test" and not gguf_path:
-        raise ValueError(
-            "Preset 'quant-test' requires --gguf to mirror GGUF precision exactly."
-        )
-    if gguf_path and preset != "quant-test":
-        print("Warning: --gguf is only used with preset 'quant-test'.")
-    if calibrate and not add_input_scale:
-        print("Warning: --calibrate ignored because --no-input-scale was set.")
+    if gguf_nvfp4_max_bitdepth < 1:
+        raise ValueError("--gguf-nvfp4-max-bitdepth must be >= 1")
+    if gguf_path and preset:
+        print("Warning: --gguf overrides preset/mode layer selection.")
     if input_scale_value is not None and not add_input_scale:
         print("Warning: --input-scale-value ignored because --no-input-scale was set.")
     if input_scale_from and not add_input_scale:
         print("Warning: --input-scale-from ignored because --no-input-scale was set.")
-    if input_scale_from_fp16 and not add_input_scale:
-        print("Warning: --input-scale-from-fp16 ignored because --no-input-scale was set.")
+    if calibrate_from_fp16 and not add_input_scale:
+        print("Warning: --calibrate-from-fp16 ignored because --no-input-scale was set.")
     if input_scale_summary_json and not add_input_scale:
         print("Warning: --input-scale-summary-json ignored because --no-input-scale was set.")
     if input_scale_summary_multiplier <= 0:
@@ -1861,13 +1633,21 @@ def convert_to_nvfp4(
 
     # Classify layers
     fp32_keep_names: Set[str] = set()
-    if preset == "quant-test" and gguf_path:
+    if gguf_path:
         gguf_types = load_gguf_tensor_types(gguf_path)
         quantize_layers, fp8_layers, skip_layers, classify_info, fp32_keep_names = (
-            classify_layers_from_gguf(tensor_names, tensors, gguf_types, verbose)
+            classify_layers_from_gguf(
+                tensor_names,
+                tensors,
+                gguf_types,
+                gguf_nvfp4_max_bitdepth,
+                verbose,
+            )
         )
         print(
-            f"GGUF parity mode: Q4_0/Q4_1 -> NVFP4, F16/BF16 -> {dtype}, F32 -> FP32"
+            "GGUF mapping: "
+            f"Q<= {gguf_nvfp4_max_bitdepth} -> NVFP4, Q> {gguf_nvfp4_max_bitdepth} -> FP8, "
+            f"F16/BF16 -> {dtype}, F32 -> FP32"
         )
     else:
         quantize_layers, fp8_layers, skip_layers, classify_info = classify_layers(
@@ -1879,6 +1659,25 @@ def convert_to_nvfp4(
             include_patterns or [],
             use_fp8,
         )
+
+    if min_ffn_fp8:
+        ffn_layers = {l for l in quantize_layers if re.search(r"\.ffn\.(0|2)\b", l)}
+        if ffn_layers:
+            quantize_layers -= ffn_layers
+            fp8_layers |= ffn_layers
+            print(f"FFN override: moved {len(ffn_layers)} layers to FP8")
+        still_nvfp4_ffn = {l for l in quantize_layers if re.search(r"\.ffn\.(0|2)\b", l)}
+        ffn_fp8 = {l for l in fp8_layers if re.search(r"\.ffn\.(0|2)\b", l)}
+        ffn_fp16 = {l for l in skip_layers if re.search(r"\.ffn\.(0|2)\b", l)}
+        if ffn_fp8 or ffn_fp16 or still_nvfp4_ffn:
+            print(
+                "FFN summary: "
+                f"FP8={len(ffn_fp8)}, FP16/BF16={len(ffn_fp16)}, NVFP4={len(still_nvfp4_ffn)}"
+            )
+        if still_nvfp4_ffn:
+            print(
+                f"Warning: {len(still_nvfp4_ffn)} FFN layers remain NVFP4 despite --min-ffn-fp8."
+            )
 
     # Print preset info if used
     if preset and classify_info.get("num_layers"):
@@ -1894,9 +1693,9 @@ def convert_to_nvfp4(
             print(f"FP8 mode enabled: {len(fp8_layers)} layers will use FP8")
 
     print(f"\nLayers to quantize (NVFP4): {len(quantize_layers)}")
-    if use_fp8:
+    if fp8_layers:
         print(f"Layers to quantize (FP8): {len(fp8_layers)}")
-    print(f"Layers to skip (FP16): {len(skip_layers)}")
+    print(f"Layers to convert to FP16/BF16: {len(skip_layers)}")
 
     if verbose or dry_run:
         print("\n--- Layers to QUANTIZE (NVFP4) ---")
@@ -1905,22 +1704,22 @@ def convert_to_nvfp4(
             if weight is not None:
                 print(f"  {layer}: {tuple(weight.shape)}")
 
-        if use_fp8 and fp8_layers:
+        if fp8_layers:
             print("\n--- Layers to QUANTIZE (FP8) ---")
             for layer in sorted(fp8_layers):
                 weight = tensors.get(f"{layer}.weight")
                 if weight is not None:
                     print(f"  {layer}: {tuple(weight.shape)}")
 
-        print("\n--- Layers to SKIP (FP16) ---")
+        print("\n--- Layers to CONVERT (FP16/BF16) ---")
         for layer in sorted(skip_layers):
             weight = tensors.get(f"{layer}.weight")
             if weight is not None:
-                print(f"  {layer}: {tuple(weight.shape)} (Linear, skipped)")
+                print(f"  {layer}: {tuple(weight.shape)} (Linear, cast to FP16/BF16)")
 
-    if add_input_scale and input_scale_from_fp16:
+    if add_input_scale and calibrate_from_fp16:
         input_scale_map = compute_input_scales_from_fp16_model(
-            input_scale_from_fp16,
+            calibrate_from_fp16,
             set(quantize_layers),
             input_scale_method,
             input_scale_samples,
@@ -1973,7 +1772,7 @@ def convert_to_nvfp4(
                     input_scale_map[base] = f.get_tensor(name).to(torch.float32)
                     input_scale_source[base] = "file"
 
-    if add_input_scale and input_scale_from_fp16:
+    if add_input_scale and calibrate_from_fp16:
         for k in input_scale_map.keys():
             if k not in input_scale_source:
                 input_scale_source[k] = "fp16"
@@ -2098,7 +1897,6 @@ def convert_to_nvfp4(
         "quantized_layers": 0,
         "fp8_layers": 0,
         "skipped_layers": 0,
-        "calibrated_layers": 0,
         "original_bytes": 0,
         "quantized_bytes": 0,
     }
@@ -2166,31 +1964,22 @@ def convert_to_nvfp4(
         # Optional: add input_scale for NVFP4 layers
         if add_input_scale:
             # Without it, ComfyUI may use dynamic quantization (can be unstable)
-            if calibrate:
-                # Use calibration for accurate input_scale (measures actual activation range)
-                input_scale = calibrate_layer(
-                    weight_device,
-                    num_steps=calibrate_steps,
-                )
-                output_tensors[f"{layer}.input_scale"] = input_scale.cpu()
-                stats["calibrated_layers"] += 1
+            if layer in input_scale_map:
+                output_tensors[f"{layer}.input_scale"] = input_scale_map[layer]
             else:
-                if layer in input_scale_map:
-                    output_tensors[f"{layer}.input_scale"] = input_scale_map[layer]
-                else:
-                    if input_scale_value is None:
-                        # Fallback heuristic (kept for compatibility)
-                        activation_amax_estimate = 10.0
-                        fallback_value = activation_amax_estimate / (
-                            F8_E4M3_MAX * F4_E2M1_MAX
-                        )
-                    else:
-                        fallback_value = input_scale_value
-
-                    input_scale = torch.tensor(
-                        [fallback_value], dtype=torch.float32, device="cpu"
+                if input_scale_value is None:
+                    # Fallback heuristic (kept for compatibility)
+                    activation_amax_estimate = 10.0
+                    fallback_value = activation_amax_estimate / (
+                        F8_E4M3_MAX * F4_E2M1_MAX
                     )
-                    output_tensors[f"{layer}.input_scale"] = input_scale
+                else:
+                    fallback_value = input_scale_value
+
+                input_scale = torch.tensor(
+                    [fallback_value], dtype=torch.float32, device="cpu"
+                )
+                output_tensors[f"{layer}.input_scale"] = input_scale
 
         # Copy bias if exists
         if bias_name in tensors:
@@ -2319,10 +2108,13 @@ def convert_to_nvfp4(
     output_metadata["nvfp4_quantized_layers"] = str(stats["quantized_layers"])
     if gguf_path:
         output_metadata["nvfp4_gguf"] = str(gguf_path)
+        output_metadata["nvfp4_gguf_nvfp4_max_bitdepth"] = str(
+            gguf_nvfp4_max_bitdepth
+        )
     if input_scale_from:
         output_metadata["nvfp4_input_scale_from"] = str(input_scale_from)
-    if input_scale_from_fp16:
-        output_metadata["nvfp4_input_scale_from_fp16"] = str(input_scale_from_fp16)
+    if calibrate_from_fp16:
+        output_metadata["nvfp4_calibrate_from_fp16"] = str(calibrate_from_fp16)
         output_metadata["nvfp4_input_scale_method"] = str(input_scale_method)
         output_metadata["nvfp4_input_scale_samples"] = str(input_scale_samples)
     if input_scale_summary_json:
@@ -2344,7 +2136,9 @@ def convert_to_nvfp4(
             output_metadata["nvfp4_full_precision_mm_patterns"] = json.dumps(
                 full_precision_mm_pattern_list
             )
-    if preset:
+    if gguf_path:
+        output_metadata["nvfp4_preset"] = "gguf"
+    elif preset:
         output_metadata["nvfp4_preset"] = preset
         if classify_info.get("num_layers"):
             output_metadata["nvfp4_num_layers"] = str(classify_info["num_layers"])
@@ -2378,8 +2172,6 @@ def convert_to_nvfp4(
     if stats["fp8_layers"] > 0:
         print(f"Quantized layers (FP8): {stats['fp8_layers']}")
     print(f"Skipped layers (FP16): {stats['skipped_layers']}")
-    if calibrate:
-        print(f"Calibrated layers: {stats['calibrated_layers']}")
     print(f"Original size: {stats['original_bytes'] / 1e9:.2f} GB")
     print(f"Quantized size: {stats['quantized_bytes'] / 1e9:.2f} GB")
     if stats["quantized_bytes"] > 0:
@@ -2420,24 +2212,12 @@ Examples:
   # Use Qwen Image Edit preset
   python convert_nvfp4.py qwen_edit.safetensors qwen_edit_nvfp4.safetensors --preset qwen-image-edit
 
-  # Use Unsloth-derived preset for Qwen Image Edit (best quality)
-  python convert_nvfp4.py qwen_edit.safetensors qwen_edit_nvfp4.safetensors --preset unsloth-qwen-image-edit-2511
-
-  # Use Unsloth-derived preset for Qwen Image 2512
-  python convert_nvfp4.py qwen_image.safetensors qwen_nvfp4.safetensors --preset unsloth-qwen-image-2512
-
-  # Use Unsloth-derived preset for any Wan model (best quality)
-  python convert_nvfp4.py wan_model.safetensors wan_nvfp4.safetensors --preset unsloth-wan
-
-    # Exact GGUF parity for Wan 2.2 TI2V (Q4_0/Q4_1 -> NVFP4, F16 -> BF16, F32 -> FP32)
-    python convert_nvfp4.py \
-            "D:\\comfy2\\ComfyUI\\nvfp4-conv\\wan2.2-ti2v-5b\\diffusion_pytorch_model.safetensors.index.json" \
-            "D:\\ComfyUI\\ComfyUI\\models\\diffusion_models\\wan2.2-ti2v-5b-nvfp4-quant-test.safetensors" \
-            --preset quant-test \
-            --gguf "D:\\ComfyUI\\ComfyUI\\models\\diffusion_models\\Wan2.2-TI2V-5B-Q4_0.gguf"
-
-  # Mixed precision: NVFP4 + FP8 for intermediate layers (better quality)
-  python convert_nvfp4.py wan_model.safetensors wan_mixed.safetensors --preset unsloth-wan --use-fp8
+  # GGUF-guided conversion (Q4->NVFP4, Q5+->FP8, F16->FP16, F32->FP32)
+  python convert_nvfp4.py \
+      "D:\\comfy2\\ComfyUI\\nvfp4-conv\\wan2.2-ti2v-5b\\diffusion_pytorch_model.safetensors.index.json" \
+      "D:\\ComfyUI\\ComfyUI\\models\\diffusion_models\\wan2.2-ti2v-5b-nvfp4-gguf.safetensors" \
+      --gguf "D:\\ComfyUI\\ComfyUI\\models\\diffusion_models\\Wan2.2-TI2V-5B-Q5_K_M.gguf" \
+      --gguf-nvfp4-max-bitdepth 4
 
   # Safe mode - skip sensitive layers  
   python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --mode safe
@@ -2448,10 +2228,7 @@ Examples:
   # Exclude specific patterns
   python convert_nvfp4.py model.safetensors output.safetensors --exclude ".*head.*" --exclude ".*proj_out.*"
 
-  # With basic calibration
-  python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --calibrate
-
-  # Smart preset - auto-detect architecture and apply Unsloth-like rules
+    # Smart preset - auto-detect architecture and apply heuristic rules
   python convert_nvfp4.py any_model.safetensors any_nvfp4.safetensors --preset smart
 
   # Smart preset with FP8 for best quality on unknown models
@@ -2459,7 +2236,7 @@ Examples:
 
 Presets:
   smart           - (Recommended for unknown models) Auto-detects architecture and
-                    applies Unsloth-like quantization rules. V projections and down
+                                        applies heuristic quantization rules. V projections and down
                     projections use FP8 (with --use-fp8) or skip, I/O layers stay FP16,
                     everything else becomes NVFP4. Works with any transformer model.
 
@@ -2474,33 +2251,9 @@ Presets:
   qwen-image-edit - Qwen Image Edit 2511 (Nov 2025). Same as qwen-image but
                     optimized for the edit model variant.
 
-  unsloth-qwen-image-edit-2511
-                  - Derived from Unsloth's Q4_K_M quantization. Skips V projections,
-                    MLP down projections, first/last blocks, and I/O layers.
-                    Based on analysis of which layers Unsloth kept at Q6_K+ precision.
-
-  unsloth-qwen-image-2512
-                  - Derived from Unsloth's Q5_K_S quantization. Skips first/last 2
-                    blocks and I/O layers. Simpler pattern - more layers quantized.
-
-  unsloth-wan     - Derived from Unsloth's Q5_K_M quantization for Wan models.
-                    Skips V projections and FFN down projections across all blocks.
-                    Works for ALL Wan: 2.1, 2.2, 5B, 14B, T2V, I2V, TI2V, MAGREF, etc.
-
-  quant-test      - Exact GGUF Q4_0 match for WAN models.
-                    Quantizes Q/K/V/O projections, FFN.0, and FFN.2 to NVFP4.
-                    Keeps only head/embeddings/norms/time at BF16, patch_embedding at F32.
-                    Use this to exactly replicate GGUF Q4_0 quantization layout.
-                    NOTE: Requires --gguf to mirror GGUF precision exactly.
-
 Mixed Precision (--use-fp8):
-  When using --use-fp8 with smart or Unsloth-derived presets, layers are quantized as:
-    - NVFP4 (4-bit): Q, K, O projections, up projections, most layers
-    - FP8 E4M3 (8-bit): V projections, down/gate projections (quality-critical)
-    - FP16: I/O layers (embeddings, heads, modulators)
-  
-  This provides better quality than pure NVFP4 with moderate size increase.
-  For Wan 14B, --use-fp8 adds ~5GB but preserves quality in sensitive layers.
+    When using --use-fp8 with presets, some layers are kept in FP8 for quality.
+    This provides better quality than pure NVFP4 with a moderate size increase.
 
 Supported inputs:
   - Single .safetensors file
@@ -2541,7 +2294,20 @@ Supported models:
         "--gguf",
         default=None,
         metavar="PATH",
-        help="Path to GGUF file for exact precision parity (required for 'quant-test').",
+        help="Path to GGUF file for precision mapping (F32/F16/Qn -> FP32/FP16/NVFP4/FP8)",
+    )
+
+    parser.add_argument(
+        "--gguf-nvfp4-max-bitdepth",
+        type=int,
+        default=4,
+        help="Max GGUF Q-bitdepth to map to NVFP4 (Qn <= threshold -> NVFP4, else FP8)",
+    )
+
+    parser.add_argument(
+        "--min-ffn-fp8",
+        action="store_true",
+        help="Force FFN up/down projections (ffn.0/ffn.2) to be at least FP8",
     )
 
     parser.add_argument(
@@ -2560,11 +2326,6 @@ Supported models:
         help="Regex pattern to force include layers (overrides --mode safe)",
     )
 
-    parser.add_argument(
-        "--calibrate",
-        action="store_true",
-        help="Enable basic calibration for input_scale",
-    )
 
     parser.add_argument(
         "--no-input-scale",
@@ -2587,10 +2348,17 @@ Supported models:
     )
 
     parser.add_argument(
-        "--input-scale-from-fp16",
+        "--calibrate-from-fp16",
+        dest="calibrate_from_fp16",
         default=None,
         metavar="PATH",
         help="Calibrate input_scale from FP16/FP32 WAN model activations",
+    )
+    parser.add_argument(
+        "--input-scale-from-fp16",
+        dest="calibrate_from_fp16",
+        metavar="PATH",
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
@@ -2698,12 +2466,6 @@ Supported models:
         help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
     )
 
-    parser.add_argument(
-        "--calibrate-steps",
-        type=int,
-        default=8,
-        help="Number of calibration steps (default: 8)",
-    )
 
     parser.add_argument(
         "--device",
@@ -2755,10 +2517,12 @@ Supported models:
             exclude_patterns=args.exclude,
             include_patterns=args.include,
             gguf_path=args.gguf,
+            gguf_nvfp4_max_bitdepth=args.gguf_nvfp4_max_bitdepth,
+            min_ffn_fp8=args.min_ffn_fp8,
             add_input_scale=not args.no_input_scale,
             input_scale_value=args.input_scale_value,
             input_scale_from=args.input_scale_from,
-            input_scale_from_fp16=args.input_scale_from_fp16,
+            calibrate_from_fp16=args.calibrate_from_fp16,
             input_scale_method=args.input_scale_method,
             input_scale_samples=args.input_scale_samples,
             comfyui_root=args.comfyui_root,
@@ -2775,8 +2539,6 @@ Supported models:
             full_precision_mm_ffn_up=args.full_precision_mm_ffn_up,
             full_precision_mm_ffn_down=args.full_precision_mm_ffn_down,
             use_ck_quant=args.use_ck_quant,
-            calibrate=args.calibrate,
-            calibrate_steps=args.calibrate_steps,
             device=args.device,
             dtype=args.dtype,
             quant_dtype=args.quant_dtype,
