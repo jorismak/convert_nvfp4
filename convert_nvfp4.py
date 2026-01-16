@@ -203,6 +203,10 @@ UNSLOTH_QWEN_IMAGE_EDIT_2511_CONFIG = {
     ),
     "skip_patterns": UNSLOTH_QWEN_IMAGE_EDIT_2511_SKIP_PATTERNS,
     "fp8_patterns": UNSLOTH_QWEN_IMAGE_EDIT_2511_FP8_PATTERNS,
+    # Tensors to keep in FP32 (not convert to BF16) - matches GGUF behavior
+    "fp32_keep_patterns": [
+        r"\.bias$",  # All biases - GGUF keeps these F32
+    ],
 }
 
 # Unsloth Qwen Image 2512 preset - derived from Q5_K_S GGUF analysis
@@ -245,6 +249,10 @@ UNSLOTH_QWEN_IMAGE_2512_CONFIG = {
     ),
     "skip_patterns": UNSLOTH_QWEN_IMAGE_2512_SKIP_PATTERNS,
     "fp8_patterns": UNSLOTH_QWEN_IMAGE_2512_FP8_PATTERNS,
+    # Tensors to keep in FP32 (not convert to BF16) - matches GGUF behavior
+    "fp32_keep_patterns": [
+        r"\.bias$",  # All biases - GGUF keeps these F32
+    ],
 }
 
 # Unsloth Wan preset - derived from Q5_K_M GGUF analysis
@@ -288,6 +296,53 @@ UNSLOTH_WAN_CONFIG = {
     ),
     "skip_patterns": UNSLOTH_WAN_SKIP_PATTERNS,
     "fp8_patterns": UNSLOTH_WAN_FP8_PATTERNS,
+    # Tensors to keep in FP32 (not convert to BF16) - matches GGUF behavior
+    "fp32_keep_patterns": [
+        r"^patch_embedding\.weight$",  # Input Conv3d - GGUF keeps this F32
+    ],
+}
+
+# =============================================================================
+# Quant Test Preset - Matches GGUF Q4_0 quantization layout
+# =============================================================================
+
+# Test preset that exactly replicates GGUF Q4_0 quantization behavior
+# for WAN models to match its quality output.
+#
+# GGUF Q4_0 analysis (WAN 2.2 TI2V 5B):
+#   - F32 (1 tensor): patch_embedding.weight only
+#   - F16 (524 tensors): All biases, norms, modulation, head, embeddings, time layers
+#   - Q4_0 (270 tensors): All Q/K/V/O projections + FFN.0 (attention + FFN up)
+#   - Q4_1 (30 tensors): FFN.2 down projections (slightly higher precision)
+#
+# This preset keeps V projections and FFN.2 at BF16 initially for testing,
+# to isolate whether the issue is with quantizing head/embeddings or these layers.
+
+QUANT_TEST_WAN_SKIP_PATTERNS = [
+    # === Critical I/O layers - must stay at BF16 ===
+    r"^head\.head\b",  # Output projection head
+    r"^text_embedding\.",  # Text input embeddings
+    r"^time_embedding\.",  # Time conditioning
+    r"^time_projection\.",  # Time projection
+    # === Normalization layers - stay at BF16 ===
+    r"\.norm.*\.weight$",  # All norm layers (norm3, norm_k, norm_q)
+    # === Modulation parameters - stay at BF16 ===
+    r"\.modulation$",  # Adaptive norm modulation
+    # NOTE: V projections and FFN.2 are NOT skipped - GGUF Q4_0 quantizes them to Q4_0/Q4_1
+    # We quantize them to NVFP4 to match GGUF exactly
+]
+
+QUANT_TEST_WAN_CONFIG = {
+    "name": "quant-test",
+    "type": "static",
+    "description": (
+        "Exact GGUF Q4_0 match for WAN models. "
+        "Quantizes Q/K/V/O projections, FFN.0, and FFN.2 to NVFP4. "
+        "Keeps only head/embeddings/norms/time at BF16, patch_embedding at F32."
+    ),
+    "skip_patterns": QUANT_TEST_WAN_SKIP_PATTERNS,
+    "fp8_patterns": [],  # No FP8 - everything is either NVFP4 or BF16
+    "fp32_keep_patterns": [r"^patch_embedding\.weight$"],
 }
 
 # =============================================================================
@@ -389,6 +444,7 @@ PRESETS = {
     "unsloth-qwen-image-edit-2511": UNSLOTH_QWEN_IMAGE_EDIT_2511_CONFIG,
     "unsloth-qwen-image-2512": UNSLOTH_QWEN_IMAGE_2512_CONFIG,
     "unsloth-wan": UNSLOTH_WAN_CONFIG,
+    "quant-test": QUANT_TEST_WAN_CONFIG,
 }
 
 
@@ -1224,8 +1280,9 @@ def calibrate_layer(
         # Track amax
         amax = torch.maximum(amax, torch.amax(x.abs()))
 
-    # Compute input scale
-    input_scale = amax / F8_E4M3_MAX
+    # Compute input scale for NVFP4 quantization
+    # When inputs are quantized to NVFP4, we need to use the combined scale formula
+    input_scale = amax / (F8_E4M3_MAX * F4_E2M1_MAX)
 
     # Clamp to reasonable range
     input_scale = torch.clamp(input_scale, min=1e-12)
@@ -1249,6 +1306,7 @@ def convert_to_nvfp4(
     calibrate_steps: int = 8,
     device: str = "cuda",
     dtype: str = "bfloat16",
+    quant_dtype: str = "bfloat16",
     dry_run: bool = False,
     verbose: bool = False,
     use_fp8: bool = False,
@@ -1268,7 +1326,9 @@ def convert_to_nvfp4(
         calibrate: Whether to run calibration
         calibrate_steps: Number of calibration steps
         device: Device to use (cuda/cpu)
-        dtype: Compute dtype (bfloat16/float16)
+        dtype: Output dtype for non-quantized tensors (bfloat16/float16)
+        quant_dtype: Input dtype for quantization (bfloat16/float16/float32).
+                     Using bfloat16 matches working HuggingFace models.
         dry_run: If True, only print what would be done
         verbose: Print detailed progress
         use_fp8: If True, use FP8 for intermediate precision layers (Q6_K equivalent)
@@ -1288,6 +1348,14 @@ def convert_to_nvfp4(
         device = "cpu"
 
     compute_dtype = torch.bfloat16 if dtype == "bfloat16" else torch.float16
+
+    # Determine quantization input dtype
+    if quant_dtype == "bfloat16":
+        quantize_input_dtype = torch.bfloat16
+    elif quant_dtype == "float16":
+        quantize_input_dtype = torch.float16
+    else:
+        quantize_input_dtype = torch.float32
 
     # Detect input type (single file vs sharded)
     input_type, base_path, index_data = detect_input_type(input_path_obj)
@@ -1313,7 +1381,8 @@ def convert_to_nvfp4(
     print(f"Total tensors: {len(tensor_names)}")
     print(f"Mode: {mode}")
     print(f"Device: {device}")
-    print(f"Compute dtype: {dtype}")
+    print(f"Output dtype: {dtype}")
+    print(f"Quantization input dtype: {quant_dtype}")
 
     # First pass: load tensors to classify (we need shapes)
     # For sharded models, load only weight tensors for classification
@@ -1440,6 +1509,7 @@ def convert_to_nvfp4(
 
     # Second pass: quantize and build output
     output_tensors = {}
+    quantized_layer_configs = {}  # For _quantization_metadata
     stats = {
         "quantized_layers": 0,
         "fp8_layers": 0,
@@ -1468,10 +1538,13 @@ def convert_to_nvfp4(
         weight = tensors[weight_name]
         stats["original_bytes"] += weight.numel() * weight.element_size()
 
-        # Move to device for quantization
-        weight_device = weight.to(device=device, dtype=torch.float32)
+        # Move to device and convert to quantization input dtype
+        # Using BF16/FP16 matches the behavior of working NVFP4 models from HuggingFace
+        # The FP32->BF16 conversion loses some precision but matches what the CUDA
+        # quantization backend expects and produces compatible results
+        weight_device = weight.to(device=device, dtype=quantize_input_dtype)
 
-        # Quantize
+        # Quantize (internally converts to FP32 for precise quantization math)
         try:
             quantized_weight, block_scale, tensor_scale = quantize_nvfp4(weight_device)
         except Exception as e:
@@ -1485,24 +1558,42 @@ def convert_to_nvfp4(
 
         # Store quantized tensors
         output_tensors[weight_name] = quantized_weight.cpu()
-        output_tensors[f"{layer}.weight_scale"] = block_scale.view(torch.uint8).cpu()
+        # IMPORTANT: Keep block_scale as float8_e4m3fn, NOT uint8!
+        # ComfyUI expects float8_e4m3fn dtype for proper dequantization
+        output_tensors[f"{layer}.weight_scale"] = block_scale.cpu()
         output_tensors[f"{layer}.weight_scale_2"] = tensor_scale.cpu()
 
-        # Comfy quant config
-        quant_config = {"format": "nvfp4"}
-        config_bytes = json.dumps(quant_config).encode("utf-8")
-        output_tensors[f"{layer}.comfy_quant"] = torch.tensor(
-            list(config_bytes), dtype=torch.uint8
-        )
+        # Track layer for _quantization_metadata
+        quantized_layer_configs[layer] = {"format": "nvfp4"}
 
-        # Calibration
+        # CRITICAL: Always add input_scale for NVFP4 layers
+        # Without it, ComfyUI uses dynamic quantization which causes noise/instability
         if calibrate:
+            # Use calibration for accurate input_scale (measures actual activation range)
             input_scale = calibrate_layer(
                 weight_device,
                 num_steps=calibrate_steps,
             )
             output_tensors[f"{layer}.input_scale"] = input_scale.cpu()
             stats["calibrated_layers"] += 1
+        else:
+            # Use a reasonable default based on typical activation statistics
+            # Neural network activations after normalization are typically in range [-10, 10]
+            # with most values concentrated around [-3, 3] (std ~1.0)
+            #
+            # We use a conservative estimate: assume activation amax ~= 10.0
+            # Formula: input_scale = amax / (F8_E4M3_MAX * F4_E2M1_MAX) = 10.0 / 2688.0
+            #
+            # This is much larger than weight-based estimates (~0.0001) and closer to
+            # Flux NVFP4's calibrated values (mean ~0.097, range 0.004-2.27)
+            activation_amax_estimate = (
+                10.0  # Conservative estimate for normalized activations
+            )
+            input_scale_value = activation_amax_estimate / (F8_E4M3_MAX * F4_E2M1_MAX)
+            input_scale = torch.tensor(
+                [input_scale_value], dtype=torch.float32, device="cpu"
+            )
+            output_tensors[f"{layer}.input_scale"] = input_scale
 
         # Copy bias if exists
         if bias_name in tensors:
@@ -1529,8 +1620,8 @@ def convert_to_nvfp4(
             weight = tensors[weight_name]
             stats["original_bytes"] += weight.numel() * weight.element_size()
 
-            # Move to device for quantization
-            weight_device = weight.to(device=device, dtype=torch.float32)
+            # Move to device and convert to quantization input dtype
+            weight_device = weight.to(device=device, dtype=quantize_input_dtype)
 
             # Quantize to FP8
             try:
@@ -1548,12 +1639,8 @@ def convert_to_nvfp4(
             output_tensors[weight_name] = fp8_weight.cpu()
             output_tensors[f"{layer}.weight_scale"] = scale.cpu()
 
-            # Comfy quant config for FP8
-            quant_config = {"format": "float8_e4m3fn"}
-            config_bytes = json.dumps(quant_config).encode("utf-8")
-            output_tensors[f"{layer}.comfy_quant"] = torch.tensor(
-                list(config_bytes), dtype=torch.uint8
-            )
+            # Track layer for _quantization_metadata
+            quantized_layer_configs[layer] = {"format": "float8_e4m3fn"}
 
             # Copy bias if exists
             if bias_name in tensors:
@@ -1570,17 +1657,42 @@ def convert_to_nvfp4(
             if device == "cuda":
                 torch.cuda.empty_cache()
 
-    # Copy non-quantized tensors
+    # Copy non-quantized tensors, converting FP32 to BF16/FP16 where appropriate
+    # Get FP32 keep patterns from preset (if any)
+    fp32_keep_patterns = []
+    if preset:
+        preset_config = PRESETS.get(preset, {})
+        fp32_keep_patterns = preset_config.get("fp32_keep_patterns", [])
+
+    def should_keep_fp32(tensor_name: str) -> bool:
+        """Check if tensor should stay in FP32 based on preset patterns."""
+        for pattern in fp32_keep_patterns:
+            if re.search(pattern, tensor_name):
+                return True
+        return False
+
     print("Copying non-quantized tensors...")
+    fp32_converted = 0
+    fp32_kept = 0
     for name in tqdm(tensor_names, desc="Copying"):
         if name not in output_tensors and name not in processed_layer_tensors:
-            output_tensors[name] = tensors[name]
-            stats["original_bytes"] += (
-                tensors[name].numel() * tensors[name].element_size()
-            )
-            stats["quantized_bytes"] += (
-                tensors[name].numel() * tensors[name].element_size()
-            )
+            tensor = tensors[name]
+            original_size = tensor.numel() * tensor.element_size()
+            stats["original_bytes"] += original_size
+
+            # Convert FP32 tensors to target dtype (BF16/FP16) unless they should stay FP32
+            if tensor.dtype == torch.float32 and not should_keep_fp32(name):
+                tensor = tensor.to(dtype=compute_dtype)
+                fp32_converted += 1
+            elif tensor.dtype == torch.float32:
+                fp32_kept += 1
+
+            output_tensors[name] = tensor
+            stats["quantized_bytes"] += tensor.numel() * tensor.element_size()
+
+    if fp32_converted > 0 or fp32_kept > 0:
+        print(f"  FP32 tensors converted to {compute_dtype}: {fp32_converted}")
+        print(f"  FP32 tensors kept as FP32: {fp32_kept}")
 
     # Add skipped layer count
     stats["skipped_layers"] = len(skip_layers)
@@ -1593,8 +1705,18 @@ def convert_to_nvfp4(
     if isinstance(metadata, dict):
         for k, v in metadata.items():
             output_metadata[str(k)] = str(v) if v is not None else ""
+
+    # Add _quantization_metadata - this is required for ComfyUI to recognize quantized layers
+    quantization_metadata = {
+        "format_version": "1.0",
+        "layers": quantized_layer_configs,
+    }
+    output_metadata["_quantization_metadata"] = json.dumps(quantization_metadata)
+
+    # Add our converter metadata
     output_metadata["nvfp4_converter"] = "convert_nvfp4.py"
     output_metadata["nvfp4_mode"] = mode
+    output_metadata["nvfp4_quant_dtype"] = quant_dtype  # Track quantization input dtype
     output_metadata["nvfp4_quantized_layers"] = str(stats["quantized_layers"])
     if preset:
         output_metadata["nvfp4_preset"] = preset
@@ -1721,6 +1843,11 @@ Presets:
                     Skips V projections and FFN down projections across all blocks.
                     Works for ALL Wan: 2.1, 2.2, 5B, 14B, T2V, I2V, TI2V, MAGREF, etc.
 
+  quant-test      - Exact GGUF Q4_0 match for WAN models.
+                    Quantizes Q/K/V/O projections, FFN.0, and FFN.2 to NVFP4.
+                    Keeps only head/embeddings/norms/time at BF16, patch_embedding at F32.
+                    Use this to exactly replicate GGUF Q4_0 quantization layout.
+
 Mixed Precision (--use-fp8):
   When using --use-fp8 with smart or Unsloth-derived presets, layers are quantized as:
     - NVFP4 (4-bit): Q, K, O projections, up projections, most layers
@@ -1805,7 +1932,15 @@ Supported models:
         "--dtype",
         choices=["bfloat16", "float16"],
         default="bfloat16",
-        help="Compute dtype (default: bfloat16)",
+        help="Output dtype for non-quantized tensors (default: bfloat16)",
+    )
+
+    parser.add_argument(
+        "--quant-dtype",
+        choices=["bfloat16", "float16", "float32"],
+        default="bfloat16",
+        help="Input dtype for quantization. Use bfloat16/float16 to match working models "
+        "from HuggingFace. Use float32 for maximum precision (default: bfloat16)",
     )
 
     parser.add_argument(
@@ -1839,6 +1974,7 @@ Supported models:
             calibrate_steps=args.calibrate_steps,
             device=args.device,
             dtype=args.dtype,
+            quant_dtype=args.quant_dtype,
             dry_run=args.dry_run,
             verbose=args.verbose,
             use_fp8=args.use_fp8,
