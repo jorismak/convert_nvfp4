@@ -64,6 +64,15 @@ Examples:
 
     # Force full-precision matmul (diagnostic)
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --full-precision-mm
+
+    # Selective full-precision matmul using a layer list
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
+        --full-precision-mm-layers full_precision_layers.txt
+
+    # Selective full-precision matmul using regex patterns (repeatable)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
+        --full-precision-mm-pattern "\.self_attn\.q\b" \
+        --full-precision-mm-pattern "\.cross_attn\.q\b"
 """
 
 import argparse
@@ -674,6 +683,21 @@ def _resolve_comfyui_root(user_root: Optional[str]) -> Path:
         return Path(user_root)
     # Default to parent of this repo (nvfp4-conv -> ComfyUI)
     return Path(__file__).resolve().parents[1]
+
+
+def _load_layer_list(path: Optional[str]) -> Set[str]:
+    if not path:
+        return set()
+    list_path = Path(path)
+    if not list_path.exists():
+        raise FileNotFoundError(f"Layer list not found: {path}")
+    layers: Set[str] = set()
+    for line in list_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        layers.add(line)
+    return layers
 
 
 def _load_state_dict_for_calibration(model_path: str) -> Dict[str, torch.Tensor]:
@@ -1655,6 +1679,8 @@ def convert_to_nvfp4(
     input_scale_summary_multiplier: float = 1.0,
     input_scale_layer_summary: bool = False,
     full_precision_mm: bool = False,
+    full_precision_mm_layers: Optional[Set[str]] = None,
+    full_precision_mm_patterns: Optional[List[str]] = None,
     use_ck_quant: bool = False,
     calibrate: bool = False,
     calibrate_steps: int = 8,
@@ -1690,6 +1716,8 @@ def convert_to_nvfp4(
         input_scale_summary_multiplier: Multiplier applied to summary scales
         input_scale_layer_summary: Print per-layer input_scale values after conversion
         full_precision_mm: Force full-precision matmul for quantized layers
+        full_precision_mm_layers: Optional allowlist of layer names to force full-precision
+        full_precision_mm_patterns: Optional regex patterns (matched against layer name)
         use_ck_quant: Use comfy_kitchen quantize_nvfp4 for backend-compatible packing
         calibrate: Whether to run calibration
         calibrate_steps: Number of calibration steps
@@ -1930,6 +1958,32 @@ def convert_to_nvfp4(
                 f"Example: {sorted(missing)[:3]}"
             )
 
+    full_precision_mm_layer_set = set(full_precision_mm_layers or [])
+    full_precision_mm_pattern_list = list(full_precision_mm_patterns or [])
+    full_precision_mm_regexes = [re.compile(p) for p in full_precision_mm_pattern_list]
+
+    def _use_full_precision_mm(layer_name: str) -> bool:
+        if full_precision_mm:
+            return True
+        if layer_name in full_precision_mm_layer_set:
+            return True
+        for rgx in full_precision_mm_regexes:
+            if rgx.search(layer_name):
+                return True
+        return False
+
+    selected_full_precision_layers: List[str] = []
+    if not full_precision_mm and (full_precision_mm_layer_set or full_precision_mm_regexes):
+        selected_full_precision_layers = [
+            l for l in sorted(quantize_layers) if _use_full_precision_mm(l)
+        ]
+        print(
+            f"Selective full-precision matmul: {len(selected_full_precision_layers)} layers "
+            f"(list={len(full_precision_mm_layer_set)}, patterns={len(full_precision_mm_regexes)})"
+        )
+        if verbose and selected_full_precision_layers:
+            print(f"  Example: {selected_full_precision_layers[:6]}")
+
     if dry_run:
         # Calculate estimated sizes - need to load all tensors for accurate size
         if is_sharded:
@@ -2051,7 +2105,7 @@ def convert_to_nvfp4(
 
         # Track layer for _quantization_metadata
         quant_conf = {"format": "nvfp4"}
-        if full_precision_mm:
+        if _use_full_precision_mm(layer):
             quant_conf["full_precision_matrix_mult"] = True
         quantized_layer_configs[layer] = quant_conf
 
@@ -2227,6 +2281,15 @@ def convert_to_nvfp4(
         )
     if full_precision_mm:
         output_metadata["nvfp4_full_precision_mm"] = "true"
+    elif selected_full_precision_layers:
+        output_metadata["nvfp4_full_precision_mm"] = "selective"
+        output_metadata["nvfp4_full_precision_mm_layers"] = str(
+            len(selected_full_precision_layers)
+        )
+        if full_precision_mm_pattern_list:
+            output_metadata["nvfp4_full_precision_mm_patterns"] = json.dumps(
+                full_precision_mm_pattern_list
+            )
     if preset:
         output_metadata["nvfp4_preset"] = preset
         if classify_info.get("num_layers"):
@@ -2531,6 +2594,21 @@ Supported models:
     )
 
     parser.add_argument(
+        "--full-precision-mm-layers",
+        default=None,
+        metavar="PATH",
+        help="Path to text file with layer names to force full-precision matmul",
+    )
+
+    parser.add_argument(
+        "--full-precision-mm-pattern",
+        action="append",
+        default=[],
+        metavar="REGEX",
+        help="Regex pattern (repeatable) to force full-precision matmul for matching layers",
+    )
+
+    parser.add_argument(
         "--use-ck-quant",
         action="store_true",
         help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
@@ -2605,6 +2683,8 @@ Supported models:
             input_scale_summary_multiplier=args.input_scale_summary_multiplier,
             input_scale_layer_summary=args.input_scale_layer_summary,
             full_precision_mm=args.full_precision_mm,
+            full_precision_mm_layers=_load_layer_list(args.full_precision_mm_layers),
+            full_precision_mm_patterns=args.full_precision_mm_pattern,
             use_ck_quant=args.use_ck_quant,
             calibrate=args.calibrate,
             calibrate_steps=args.calibrate_steps,
