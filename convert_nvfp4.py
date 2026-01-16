@@ -61,6 +61,9 @@ Examples:
 
     # Print per-layer input_scale used
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-layer-summary
+
+    # Force full-precision matmul (diagnostic)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --full-precision-mm
 """
 
 import argparse
@@ -1651,6 +1654,7 @@ def convert_to_nvfp4(
     input_scale_summary_percentile: int = 99,
     input_scale_summary_multiplier: float = 1.0,
     input_scale_layer_summary: bool = False,
+    full_precision_mm: bool = False,
     use_ck_quant: bool = False,
     calibrate: bool = False,
     calibrate_steps: int = 8,
@@ -1685,6 +1689,7 @@ def convert_to_nvfp4(
         input_scale_summary_percentile: Percentile to use from summary JSON
         input_scale_summary_multiplier: Multiplier applied to summary scales
         input_scale_layer_summary: Print per-layer input_scale values after conversion
+        full_precision_mm: Force full-precision matmul for quantized layers
         use_ck_quant: Use comfy_kitchen quantize_nvfp4 for backend-compatible packing
         calibrate: Whether to run calibration
         calibrate_steps: Number of calibration steps
@@ -2045,7 +2050,10 @@ def convert_to_nvfp4(
         output_tensors[f"{layer}.weight_scale_2"] = tensor_scale.cpu()
 
         # Track layer for _quantization_metadata
-        quantized_layer_configs[layer] = {"format": "nvfp4"}
+        quant_conf = {"format": "nvfp4"}
+        if full_precision_mm:
+            quant_conf["full_precision_matrix_mult"] = True
+        quantized_layer_configs[layer] = quant_conf
 
         # Optional: add input_scale for NVFP4 layers
         if add_input_scale:
@@ -2217,6 +2225,8 @@ def convert_to_nvfp4(
         output_metadata["nvfp4_input_scale_summary_multiplier"] = str(
             input_scale_summary_multiplier
         )
+    if full_precision_mm:
+        output_metadata["nvfp4_full_precision_mm"] = "true"
     if preset:
         output_metadata["nvfp4_preset"] = preset
         if classify_info.get("num_layers"):
@@ -2515,6 +2525,12 @@ Supported models:
     )
 
     parser.add_argument(
+        "--full-precision-mm",
+        action="store_true",
+        help="Force full-precision matmul for quantized layers (diagnostic)",
+    )
+
+    parser.add_argument(
         "--use-ck-quant",
         action="store_true",
         help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
@@ -2588,6 +2604,7 @@ Supported models:
             input_scale_summary_percentile=args.input_scale_summary_percentile,
             input_scale_summary_multiplier=args.input_scale_summary_multiplier,
             input_scale_layer_summary=args.input_scale_layer_summary,
+            full_precision_mm=args.full_precision_mm,
             use_ck_quant=args.use_ck_quant,
             calibrate=args.calibrate,
             calibrate_steps=args.calibrate_steps,
