@@ -85,6 +85,12 @@ Examples:
     # Full-precision matmul for self_attn Q/K/V/O (WAN models)
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
         --full-precision-mm-self-attn-qkvo
+
+    # Full-precision matmul for FFN up/down projections (WAN models)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
+        --full-precision-mm-ffn-up
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
+        --full-precision-mm-ffn-down
 """
 
 import argparse
@@ -1696,6 +1702,8 @@ def convert_to_nvfp4(
     full_precision_mm_cross_attn_kv: bool = False,
     full_precision_mm_cross_attn_qkvo: bool = False,
     full_precision_mm_self_attn_qkvo: bool = False,
+    full_precision_mm_ffn_up: bool = False,
+    full_precision_mm_ffn_down: bool = False,
     use_ck_quant: bool = False,
     calibrate: bool = False,
     calibrate_steps: int = 8,
@@ -1736,6 +1744,8 @@ def convert_to_nvfp4(
         full_precision_mm_cross_attn_kv: Force full-precision for cross_attn K/V (WAN models)
         full_precision_mm_cross_attn_qkvo: Force full-precision for cross_attn Q/K/V/O (WAN models)
         full_precision_mm_self_attn_qkvo: Force full-precision for self_attn Q/K/V/O (WAN models)
+        full_precision_mm_ffn_up: Force full-precision for FFN up projections (ffn.0) (WAN models)
+        full_precision_mm_ffn_down: Force full-precision for FFN down projections (ffn.2) (WAN models)
         use_ck_quant: Use comfy_kitchen quantize_nvfp4 for backend-compatible packing
         calibrate: Whether to run calibration
         calibrate_steps: Number of calibration steps
@@ -2000,6 +2010,10 @@ def convert_to_nvfp4(
                 r"\.self_attn\.o\b",
             ]
         )
+    if full_precision_mm_ffn_up:
+        full_precision_mm_pattern_list.append(r"\.ffn\.0\b")
+    if full_precision_mm_ffn_down:
+        full_precision_mm_pattern_list.append(r"\.ffn\.2\b")
     full_precision_mm_regexes = [re.compile(p) for p in full_precision_mm_pattern_list]
 
     def _use_full_precision_mm(layer_name: str) -> bool:
@@ -2667,6 +2681,18 @@ Supported models:
     )
 
     parser.add_argument(
+        "--full-precision-mm-ffn-up",
+        action="store_true",
+        help="Force full-precision matmul for FFN up projections (ffn.0) (WAN models)",
+    )
+
+    parser.add_argument(
+        "--full-precision-mm-ffn-down",
+        action="store_true",
+        help="Force full-precision matmul for FFN down projections (ffn.2) (WAN models)",
+    )
+
+    parser.add_argument(
         "--use-ck-quant",
         action="store_true",
         help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
@@ -2746,6 +2772,8 @@ Supported models:
             full_precision_mm_cross_attn_kv=args.full_precision_mm_cross_attn_kv,
             full_precision_mm_cross_attn_qkvo=args.full_precision_mm_cross_attn_qkvo,
             full_precision_mm_self_attn_qkvo=args.full_precision_mm_self_attn_qkvo,
+            full_precision_mm_ffn_up=args.full_precision_mm_ffn_up,
+            full_precision_mm_ffn_down=args.full_precision_mm_ffn_down,
             use_ck_quant=args.use_ck_quant,
             calibrate=args.calibrate,
             calibrate_steps=args.calibrate_steps,
