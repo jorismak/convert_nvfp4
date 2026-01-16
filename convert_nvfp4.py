@@ -746,67 +746,156 @@ def to_blocked(input_matrix: torch.Tensor, flatten: bool = True) -> torch.Tensor
     return rearranged.reshape(padded_rows, padded_cols)
 
 
-def stochastic_float_to_fp4_e2m1(
-    x: torch.Tensor, generator: torch.Generator
-) -> torch.Tensor:
+def _n_ones(n: int) -> int:
+    """Return a number with n bits set to 1."""
+    return (1 << n) - 1
+
+
+# FP32 constants for conversion
+EBITS_F32, MBITS_F32 = 8, 23
+F32_EXP_BIAS = _n_ones(EBITS_F32 - 1)  # 127
+
+
+def _f32_to_floatx_unpacked(x: torch.Tensor, ebits: int, mbits: int) -> torch.Tensor:
+    """Convert FP32 numbers to sub-byte floating point numbers.
+
+    This is the correct IEEE-754 style conversion with proper rounding,
+    derived from PyTorch AO (comfy_kitchen).
+
+    Args:
+        x: Input tensor of dtype torch.float32
+        ebits: Number of exponent bits (2 for FP4 E2M1)
+        mbits: Number of mantissa bits (1 for FP4 E2M1)
+
+    Returns:
+        torch.Tensor of dtype torch.uint8, where the bit encoding is stored
+        in the least significant bits.
     """
-    Convert float tensor to packed FP4 E2M1 format with stochastic rounding.
+    assert x.dtype == torch.float
+    assert 1 + ebits + mbits <= 8
+
+    # Calculate constants
+    exp_bias = _n_ones(ebits - 1)
+    max_int = _n_ones(ebits + mbits)
+    sign_mask = 1 << (ebits + mbits)
+
+    magic_adder = _n_ones(MBITS_F32 - mbits - 1)
+
+    # All E bits and M bits are 1s
+    max_normal = 2 ** (_n_ones(ebits) - exp_bias) * (_n_ones(mbits + 1) / (2**mbits))
+
+    # E bits = 1, M bits = 0
+    min_normal = 2 ** (1 - exp_bias)
+
+    denorm_exp = (
+        # Exp bias conversion between formats
+        (F32_EXP_BIAS - exp_bias)
+        # Mantissa length difference between formats
+        + (MBITS_F32 - mbits)
+        # Add one to encoded exponent for denormalized numbers
+        + 1
+    )
+    denorm_mask_int = denorm_exp << MBITS_F32
+
+    # Reinterpret int32 as float32
+    denorm_mask_float = torch.tensor(denorm_mask_int, dtype=torch.int32).view(
+        torch.float32
+    )
+
+    # Save the sign
+    x = x.view(torch.int32)
+    sign = x & 0x80000000
+
+    # Set everything to positive, will add sign back at the end
+    x = x ^ sign
+
+    # Convert back to float for comparisons
+    x = x.view(torch.float)
+
+    # Rewrite saturate/denorm/norm branches without explicit data dependent
+    # control flow, to be more compiler friendly
+    saturate_mask = x >= max_normal
+    denormal_mask = torch.logical_and(torch.logical_not(saturate_mask), x < min_normal)
+    normal_mask = torch.logical_not(torch.logical_or(saturate_mask, denormal_mask))
+
+    #
+    # Branch 1: saturate to max val - handled later in combining branches
+    #
+
+    #
+    # Branch 2: conversion to denormal as well as rounding up to normal
+    #
+    denormal_x = x + denorm_mask_float
+    denormal_x = denormal_x.view(torch.int32)
+    denormal_x -= denorm_mask_int
+    denormal_x = denormal_x.to(torch.uint8)
+
+    #
+    # Branch 3: stay in normal range, adjust the exponent and round
+    #
+    normal_x = x.view(torch.int32)
+    # Resulting mantissa is odd
+    mant_odd = (normal_x >> (MBITS_F32 - mbits)) & 1
+    # Update exponent, rounding bias part 1
+    val_to_add = ((exp_bias - F32_EXP_BIAS) << MBITS_F32) + magic_adder
+    normal_x += val_to_add
+    # Rounding bias part 2
+    normal_x += mant_odd
+    # Take the bits!
+    normal_x = normal_x >> (MBITS_F32 - mbits)
+    normal_x = normal_x.to(torch.uint8)
+
+    #
+    # Combine the branches
+    #
+    x = torch.full_like(x, max_int, dtype=torch.uint8)
+    x = torch.where(denormal_mask, denormal_x, x)
+    x = torch.where(normal_mask, normal_x, x)
+
+    # Add sign back
+    sign_lp = sign >> (MBITS_F32 + EBITS_F32 - mbits - ebits)
+    sign_lp = sign_lp.to(torch.uint8)
+    # Mask out any filled bits from signed right shift
+    sign_lp = sign_lp & sign_mask
+    x = x | sign_lp
+
+    return x.to(torch.uint8)
+
+
+def pack_uint4(uint8_data: torch.Tensor) -> torch.Tensor:
+    """Pack two 4-bit values into one uint8 byte."""
+    shape = uint8_data.shape
+    assert shape[-1] % 2 == 0
+    uint8_data = uint8_data.contiguous().view(-1)
+    # Pack: first value in high nibble, second in low nibble
+    return (uint8_data[::2] << 4 | uint8_data[1::2]).view(*shape[:-1], shape[-1] // 2)
+
+
+def float_to_fp4_e2m1_packed(x: torch.Tensor) -> torch.Tensor:
+    """
+    Convert float tensor to packed FP4 E2M1 format with correct IEEE-754 rounding.
 
     FP4 E2M1 format: 1 sign bit, 2 exponent bits, 1 mantissa bit
     Range: [-6.0, 6.0]
 
     Args:
         x: Input float tensor (values should be pre-scaled to FP4 range)
-        generator: Random generator for stochastic rounding
 
     Returns:
         Packed uint8 tensor (2 FP4 values per byte)
     """
-    orig_shape = x.shape
-    sign = torch.signbit(x).to(torch.uint8)
+    # Convert to float32 for the conversion algorithm
+    x_f32 = x.to(torch.float32)
 
-    # Add stochastic noise before rounding
-    exp = torch.floor(torch.log2(x.abs()) + 1.0).clamp(0, 3)
-    x = (
-        x
-        + (
-            torch.rand(
-                x.size(),
-                dtype=x.dtype,
-                layout=x.layout,
-                device=x.device,
-                generator=generator,
-            )
-            - 0.5
-        )
-        * (2 ** (exp - 2.0))
-        * 1.25
-    )
+    # Convert float32 to unpacked FP4 codes (one code per byte)
+    fp4_unpacked = _f32_to_floatx_unpacked(x_f32, ebits=2, mbits=1)
 
-    x = x.abs()
-    exp = torch.floor(torch.log2(x) + 1.1925).clamp(0, 3)
-
-    mantissa = (
-        torch.where(exp > 0, (x / (2.0 ** (exp - 1)) - 1.0) * 2.0, (x * 2.0), out=x)
-        .round()
-        .to(torch.uint8)
-    )
-    del x
-
-    exp = exp.to(torch.uint8)
-
-    # Pack: sign(1) | exp(2) | mantissa(1) = 4 bits
-    fp4 = (sign << 3) | (exp << 1) | mantissa
-    del sign, exp, mantissa
-
-    # Pack two FP4 values into one uint8
-    fp4_flat = fp4.view(-1)
-    packed = (fp4_flat[0::2] << 4) | fp4_flat[1::2]
-    return packed.reshape(list(orig_shape)[:-1] + [-1])
+    # Pack two FP4 values into one byte
+    return pack_uint4(fp4_unpacked)
 
 
 def quantize_nvfp4_block(
-    x: torch.Tensor, per_tensor_scale: torch.Tensor, generator: torch.Generator
+    x: torch.Tensor, per_tensor_scale: torch.Tensor
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Quantize a tensor block to NVFP4 format.
@@ -814,7 +903,6 @@ def quantize_nvfp4_block(
     Args:
         x: Input tensor of shape (rows, cols)
         per_tensor_scale: Global scale factor
-        generator: Random generator for stochastic rounding
 
     Returns:
         Tuple of (quantized_data, block_scales)
@@ -837,21 +925,20 @@ def quantize_nvfp4_block(
     ).unsqueeze(-1)
     x = x.view(orig_shape).nan_to_num()
 
-    # Quantize to FP4
-    data_fp4 = stochastic_float_to_fp4_e2m1(x, generator=generator)
+    # Quantize to FP4 using correct IEEE-754 rounding
+    data_fp4 = float_to_fp4_e2m1_packed(x)
 
     return data_fp4, scaled_block_scales_fp8
 
 
 def quantize_nvfp4(
-    weight: torch.Tensor, seed: int = 0, block_size: int = 4096 * 4096
+    weight: torch.Tensor, block_size: int = 4096 * 4096
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Quantize a weight tensor to NVFP4 format.
 
     Args:
         weight: Input weight tensor of shape (out_features, in_features)
-        seed: Seed for stochastic rounding (0 = deterministic)
         block_size: Processing block size for memory efficiency
 
     Returns:
@@ -889,18 +976,12 @@ def quantize_nvfp4(
         device=x.device,
     )
 
-    # Initialize generator
-    generator = torch.Generator(device=x.device)
-    generator.manual_seed(seed)
-
     # Process in blocks for memory efficiency
     num_slices = max(1, x.numel() // block_size)
     slice_size = max(1, round(x.shape[0] / num_slices))
 
     for i in range(0, x.shape[0], slice_size):
-        fp4, block = quantize_nvfp4_block(
-            x[i : i + slice_size], tensor_scale, generator=generator
-        )
+        fp4, block = quantize_nvfp4_block(x[i : i + slice_size], tensor_scale)
         output_fp4[i : i + slice_size].copy_(fp4)
         output_block[i : i + slice_size].copy_(block)
 
@@ -1166,7 +1247,6 @@ def convert_to_nvfp4(
     include_patterns: Optional[List[str]] = None,
     calibrate: bool = False,
     calibrate_steps: int = 8,
-    seed: int = 0,
     device: str = "cuda",
     dtype: str = "bfloat16",
     dry_run: bool = False,
@@ -1187,7 +1267,6 @@ def convert_to_nvfp4(
         include_patterns: Patterns to force include
         calibrate: Whether to run calibration
         calibrate_steps: Number of calibration steps
-        seed: Random seed for stochastic rounding
         device: Device to use (cuda/cpu)
         dtype: Compute dtype (bfloat16/float16)
         dry_run: If True, only print what would be done
@@ -1394,9 +1473,7 @@ def convert_to_nvfp4(
 
         # Quantize
         try:
-            quantized_weight, block_scale, tensor_scale = quantize_nvfp4(
-                weight_device, seed=seed
-            )
+            quantized_weight, block_scale, tensor_scale = quantize_nvfp4(weight_device)
         except Exception as e:
             print(f"\nWarning: Failed to quantize {layer}: {e}")
             print(f"  Keeping original weight")
@@ -1718,13 +1795,6 @@ Supported models:
     )
 
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=0,
-        help="Seed for stochastic rounding (default: 0 = deterministic)",
-    )
-
-    parser.add_argument(
         "--device",
         choices=["cuda", "cpu"],
         default="cuda",
@@ -1767,7 +1837,6 @@ Supported models:
             include_patterns=args.include,
             calibrate=args.calibrate,
             calibrate_steps=args.calibrate_steps,
-            seed=args.seed,
             device=args.device,
             dtype=args.dtype,
             dry_run=args.dry_run,
