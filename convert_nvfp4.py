@@ -71,8 +71,20 @@ Examples:
 
     # Selective full-precision matmul using regex patterns (repeatable)
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
-        --full-precision-mm-pattern "\.self_attn\.q\b" \
-        --full-precision-mm-pattern "\.cross_attn\.q\b"
+        --full-precision-mm-pattern "\\.self_attn\\.q\b" \
+        --full-precision-mm-pattern "\\.cross_attn\\.q\b"
+
+    # Full-precision matmul for cross_attn K/V (WAN models)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
+        --full-precision-mm-cross-attn-kv
+
+    # Full-precision matmul for cross_attn Q/K/V/O (WAN models)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
+        --full-precision-mm-cross-attn-qkvo
+
+    # Full-precision matmul for self_attn Q/K/V/O (WAN models)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
+        --full-precision-mm-self-attn-qkvo
 """
 
 import argparse
@@ -1681,6 +1693,9 @@ def convert_to_nvfp4(
     full_precision_mm: bool = False,
     full_precision_mm_layers: Optional[Set[str]] = None,
     full_precision_mm_patterns: Optional[List[str]] = None,
+    full_precision_mm_cross_attn_kv: bool = False,
+    full_precision_mm_cross_attn_qkvo: bool = False,
+    full_precision_mm_self_attn_qkvo: bool = False,
     use_ck_quant: bool = False,
     calibrate: bool = False,
     calibrate_steps: int = 8,
@@ -1718,6 +1733,9 @@ def convert_to_nvfp4(
         full_precision_mm: Force full-precision matmul for quantized layers
         full_precision_mm_layers: Optional allowlist of layer names to force full-precision
         full_precision_mm_patterns: Optional regex patterns (matched against layer name)
+        full_precision_mm_cross_attn_kv: Force full-precision for cross_attn K/V (WAN models)
+        full_precision_mm_cross_attn_qkvo: Force full-precision for cross_attn Q/K/V/O (WAN models)
+        full_precision_mm_self_attn_qkvo: Force full-precision for self_attn Q/K/V/O (WAN models)
         use_ck_quant: Use comfy_kitchen quantize_nvfp4 for backend-compatible packing
         calibrate: Whether to run calibration
         calibrate_steps: Number of calibration steps
@@ -1960,6 +1978,28 @@ def convert_to_nvfp4(
 
     full_precision_mm_layer_set = set(full_precision_mm_layers or [])
     full_precision_mm_pattern_list = list(full_precision_mm_patterns or [])
+    if full_precision_mm_cross_attn_kv:
+        full_precision_mm_pattern_list.extend(
+            [r"\.cross_attn\.k\b", r"\.cross_attn\.v\b"]
+        )
+    if full_precision_mm_cross_attn_qkvo:
+        full_precision_mm_pattern_list.extend(
+            [
+                r"\.cross_attn\.q\b",
+                r"\.cross_attn\.k\b",
+                r"\.cross_attn\.v\b",
+                r"\.cross_attn\.o\b",
+            ]
+        )
+    if full_precision_mm_self_attn_qkvo:
+        full_precision_mm_pattern_list.extend(
+            [
+                r"\.self_attn\.q\b",
+                r"\.self_attn\.k\b",
+                r"\.self_attn\.v\b",
+                r"\.self_attn\.o\b",
+            ]
+        )
     full_precision_mm_regexes = [re.compile(p) for p in full_precision_mm_pattern_list]
 
     def _use_full_precision_mm(layer_name: str) -> bool:
@@ -2609,6 +2649,24 @@ Supported models:
     )
 
     parser.add_argument(
+        "--full-precision-mm-cross-attn-kv",
+        action="store_true",
+        help="Force full-precision matmul for cross_attn K/V layers (WAN models)",
+    )
+
+    parser.add_argument(
+        "--full-precision-mm-cross-attn-qkvo",
+        action="store_true",
+        help="Force full-precision matmul for cross_attn Q/K/V/O layers (WAN models)",
+    )
+
+    parser.add_argument(
+        "--full-precision-mm-self-attn-qkvo",
+        action="store_true",
+        help="Force full-precision matmul for self_attn Q/K/V/O layers (WAN models)",
+    )
+
+    parser.add_argument(
         "--use-ck-quant",
         action="store_true",
         help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
@@ -2685,6 +2743,9 @@ Supported models:
             full_precision_mm=args.full_precision_mm,
             full_precision_mm_layers=_load_layer_list(args.full_precision_mm_layers),
             full_precision_mm_patterns=args.full_precision_mm_pattern,
+            full_precision_mm_cross_attn_kv=args.full_precision_mm_cross_attn_kv,
+            full_precision_mm_cross_attn_qkvo=args.full_precision_mm_cross_attn_qkvo,
+            full_precision_mm_self_attn_qkvo=args.full_precision_mm_self_attn_qkvo,
             use_ck_quant=args.use_ck_quant,
             calibrate=args.calibrate,
             calibrate_steps=args.calibrate_steps,
