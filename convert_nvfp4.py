@@ -1991,7 +1991,6 @@ def convert_to_nvfp4(
             else:
                 if layer in input_scale_map:
                     output_tensors[f"{layer}.input_scale"] = input_scale_map[layer]
-                    continue
                 if input_scale_value is None:
                     # Fallback heuristic (kept for compatibility)
                     activation_amax_estimate = 10.0
