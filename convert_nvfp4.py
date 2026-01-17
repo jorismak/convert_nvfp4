@@ -1504,6 +1504,7 @@ def convert_to_nvfp4(
     gguf_path: Optional[str] = None,
     gguf_nvfp4_max_bitdepth: int = 4,
     min_ffn_fp8: bool = False,
+    min_ffn2_fp16: bool = False,
     add_input_scale: bool = True,
     input_scale_value: Optional[float] = None,
     input_scale_from: Optional[str] = None,
@@ -1546,6 +1547,7 @@ def convert_to_nvfp4(
         gguf_path: Optional path to GGUF for precision mapping
         gguf_nvfp4_max_bitdepth: Bitdepth threshold for NVFP4 (Qn <= threshold -> NVFP4, else FP8)
         min_ffn_fp8: Ensure FFN up/down (ffn.0/ffn.2) are at least FP8
+        min_ffn2_fp16: Force FFN down projection (ffn.2) to FP16/BF16
         add_input_scale: Whether to write input_scale tensors for NVFP4 layers
         input_scale_value: Fixed input_scale value for activations (if not calibrating)
         input_scale_from: Optional NVFP4 safetensors file to copy input_scale values
@@ -1719,6 +1721,15 @@ def convert_to_nvfp4(
             print(
                 f"Warning: {len(still_nvfp4_ffn)} FFN layers remain NVFP4 despite --min-ffn-fp8."
             )
+
+    if min_ffn2_fp16:
+        ffn2_layers = {l for l in quantize_layers if re.search(r"\.ffn\.2\b", l)}
+        ffn2_layers |= {l for l in fp8_layers if re.search(r"\.ffn\.2\b", l)}
+        if ffn2_layers:
+            quantize_layers -= ffn2_layers
+            fp8_layers -= ffn2_layers
+            skip_layers |= ffn2_layers
+            print(f"FFN.2 override: moved {len(ffn2_layers)} layers to FP16/BF16")
 
     # Print preset info if used
     if preset and classify_info.get("num_layers"):
@@ -2352,6 +2363,12 @@ Supported models:
     )
 
     parser.add_argument(
+        "--min-ffn2-fp16",
+        action="store_true",
+        help="Force FFN down projections (ffn.2) to FP16/BF16",
+    )
+
+    parser.add_argument(
         "--exclude",
         action="append",
         default=[],
@@ -2560,6 +2577,7 @@ Supported models:
             gguf_path=args.gguf,
             gguf_nvfp4_max_bitdepth=args.gguf_nvfp4_max_bitdepth,
             min_ffn_fp8=args.min_ffn_fp8,
+            min_ffn2_fp16=args.min_ffn2_fp16,
             add_input_scale=not args.no_input_scale,
             input_scale_value=args.input_scale_value,
             input_scale_from=args.input_scale_from,
