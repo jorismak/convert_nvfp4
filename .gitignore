@@ -15,3 +15,6 @@ MAGREF-Video
 wan2.2-i2v-a14b-high-noise
 wan2.2-i2v-a14b-low-noise
 comfyui-source\nvfp4-conv
+prompts.txt
+images/*.jpg
+
