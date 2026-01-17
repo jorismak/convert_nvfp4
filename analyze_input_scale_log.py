@@ -95,7 +95,7 @@ def _write_csv(path: Path, rows: List[Dict[str, object]], fields: List[str]) -> 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize input_scale logs")
     parser.add_argument("--input", required=True, help="Path to nvfp4_scales.txt")
-    parser.add_argument("--csv", required=True, help="Output CSV path")
+    parser.add_argument("--csv", help="Output CSV path (optional)")
     parser.add_argument("--json", required=True, help="Output JSON path")
     parser.add_argument(
         "--format",
@@ -204,7 +204,8 @@ def main() -> None:
             "amax_std",
         ] + [f"amax_p{p}" for p in args.percentiles]
 
-    _write_csv(Path(args.csv), rows, fields)
+    if args.csv:
+        _write_csv(Path(args.csv), rows, fields)
 
     # Write JSON
     json_out = {
@@ -215,7 +216,8 @@ def main() -> None:
     }
     Path(args.json).write_text(json.dumps(json_out, indent=2), encoding="utf-8")
 
-    print(f"Wrote CSV: {args.csv}")
+    if args.csv:
+        print(f"Wrote CSV: {args.csv}")
     print(f"Wrote JSON: {args.json}")
 
 
