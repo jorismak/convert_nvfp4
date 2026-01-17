@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-Parse NVFP4 input_scale logs and produce per-layer summary stats.
+Parse input_scale logs and produce per-layer summary stats.
 
 Input format (tab-separated):
-  mode\tlayer\tscale\tamax\tshape
+    format\tmode\tlayer\tscale\tamax\tshape
 Example:
-  dynamic\tblocks.0.self_attn.q\t0.008405\t22.593750\t(33440, 3072)
+    nvfp4\tdynamic\tblocks.0.self_attn.q\t0.008405\t22.593750\t(33440, 3072)
+
+Legacy input format (tab-separated):
+    mode\tlayer\tscale\tamax\tshape
+Example:
+    dynamic\tblocks.0.self_attn.q\t0.008405\t22.593750\t(33440, 3072)
 
 Outputs:
   - CSV summary (per layer)
@@ -78,10 +83,15 @@ def _write_csv(path: Path, rows: List[Dict[str, object]], fields: List[str]) -> 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Summarize NVFP4 input_scale logs")
+    parser = argparse.ArgumentParser(description="Summarize input_scale logs")
     parser.add_argument("--input", required=True, help="Path to nvfp4_scales.txt")
     parser.add_argument("--csv", required=True, help="Output CSV path")
     parser.add_argument("--json", required=True, help="Output JSON path")
+    parser.add_argument(
+        "--format",
+        default="nvfp4",
+        help="Quant format to include (default: nvfp4). Use 'all' to skip filtering.",
+    )
     parser.add_argument(
         "--percentiles",
         default="50,90,95,99",
@@ -111,7 +121,18 @@ def main() -> None:
             parts = line.split("\t")
             if len(parts) < 5:
                 continue
-            mode, layer, scale_str, amax_str, _shape = parts[:5]
+
+            # New format: format, mode, layer, scale, amax, shape
+            if len(parts) >= 6:
+                fmt, mode, layer, scale_str, amax_str, _shape = parts[:6]
+                if args.format != "all" and fmt != args.format:
+                    continue
+            else:
+                # Legacy format: mode, layer, scale, amax, shape
+                fmt = "unknown"
+                mode, layer, scale_str, amax_str, _shape = parts[:5]
+                if args.format != "all" and args.format != "nvfp4":
+                    continue
             if args.mode != "all" and mode != args.mode:
                 continue
             try:
@@ -172,7 +193,12 @@ def main() -> None:
     _write_csv(Path(args.csv), rows, fields)
 
     # Write JSON
-    json_out = {"mode": args.mode, "percentiles": args.percentiles, "layers": rows}
+    json_out = {
+        "format": args.format,
+        "mode": args.mode,
+        "percentiles": args.percentiles,
+        "layers": rows,
+    }
     Path(args.json).write_text(json.dumps(json_out, indent=2), encoding="utf-8")
 
     print(f"Wrote CSV: {args.csv}")
