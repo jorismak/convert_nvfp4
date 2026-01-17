@@ -705,6 +705,7 @@ def classify_layers_from_gguf(
     tensors: Dict[str, torch.Tensor],
     gguf_types: Dict[str, str],
     nvfp4_max_bitdepth: int,
+    use_fp8: bool = False,
     verbose: bool = False,
 ) -> Tuple[Set[str], Set[str], Set[str], Dict, Set[str]]:
     """
@@ -765,7 +766,10 @@ def classify_layers_from_gguf(
             if bitdepth <= nvfp4_max_bitdepth:
                 quantize_layers.add(layer)
             else:
-                fp8_layers.add(layer)
+                if use_fp8:
+                    fp8_layers.add(layer)
+                else:
+                    skip_layers.add(layer)
             continue
 
         unknown_types.append((name, ttype))
@@ -1744,14 +1748,21 @@ def convert_to_nvfp4(
                 tensors,
                 gguf_types,
                 gguf_nvfp4_max_bitdepth,
-                verbose,
+                use_fp8=use_fp8,
+                verbose=verbose,
             )
         )
-        print(
-            "GGUF mapping: "
-            f"Q<= {gguf_nvfp4_max_bitdepth} -> NVFP4, Q> {gguf_nvfp4_max_bitdepth} -> FP8, "
-            f"F16/BF16 -> {dtype}, F32 -> FP32"
-        )
+        if use_fp8:
+            gguf_map = (
+                f"Q<= {gguf_nvfp4_max_bitdepth} -> NVFP4, Q> {gguf_nvfp4_max_bitdepth} -> FP8, "
+                f"F16/BF16 -> {dtype}, F32 -> FP32"
+            )
+        else:
+            gguf_map = (
+                f"Q<= {gguf_nvfp4_max_bitdepth} -> NVFP4, Q> {gguf_nvfp4_max_bitdepth} -> FP16/BF16, "
+                f"F16/BF16 -> {dtype}, F32 -> FP32"
+            )
+        print(f"GGUF mapping: {gguf_map}")
     else:
         quantize_layers, fp8_layers, skip_layers, classify_info = classify_layers(
             tensor_names,
