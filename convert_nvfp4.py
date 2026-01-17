@@ -56,6 +56,12 @@ Examples:
     # Add margin to summary-derived input_scale
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-summary-json nvfp4_scales_summary.json --input-scale-summary-percentile 99 --input-scale-summary-multiplier 1.05
 
+    # Use summary-derived input_scales and force high-variance layers to FP16
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
+        --input-scale-summary-json nvfp4_scales_summary.json \
+        --input-scale-summary-percentile 99 \
+        --input-scale-summary-fp16-std
+
     # Print per-layer input_scale used
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-layer-summary
 
@@ -1515,6 +1521,9 @@ def convert_to_nvfp4(
     input_scale_summary_json: Optional[str] = None,
     input_scale_summary_percentile: int = 99,
     input_scale_summary_multiplier: float = 1.0,
+    input_scale_summary_fp16_std: bool = False,
+    input_scale_summary_std_threshold: Optional[float] = None,
+    input_scale_summary_cv_threshold: Optional[float] = 0.4,
     input_scale_layer_summary: bool = False,
     full_precision_mm: bool = False,
     full_precision_mm_layers: Optional[Set[str]] = None,
@@ -1558,6 +1567,9 @@ def convert_to_nvfp4(
         input_scale_summary_json: Optional summary JSON from analyze_input_scale_log.py
         input_scale_summary_percentile: Percentile to use from summary JSON
         input_scale_summary_multiplier: Multiplier applied to summary scales
+        input_scale_summary_fp16_std: If True, move high-variance layers to FP16/BF16
+        input_scale_summary_std_threshold: Absolute scale_std threshold for FP16/BF16
+        input_scale_summary_cv_threshold: Relative scale_std/scale_mean threshold for FP16/BF16
         input_scale_layer_summary: Print per-layer input_scale values after conversion
         full_precision_mm: Force full-precision matmul for quantized layers
         full_precision_mm_layers: Optional allowlist of layer names to force full-precision
@@ -1599,6 +1611,10 @@ def convert_to_nvfp4(
         print("Warning: --input-scale-summary-json ignored because --no-input-scale was set.")
     if input_scale_summary_multiplier <= 0:
         raise ValueError("--input-scale-summary-multiplier must be > 0")
+    if input_scale_summary_std_threshold is not None and input_scale_summary_std_threshold <= 0:
+        raise ValueError("--input-scale-summary-std-threshold must be > 0")
+    if input_scale_summary_cv_threshold is not None and input_scale_summary_cv_threshold <= 0:
+        raise ValueError("--input-scale-summary-cv-threshold must be > 0")
 
     input_scale_map: Dict[str, torch.Tensor] = {}
     input_scale_source: Dict[str, str] = {}
@@ -1791,10 +1807,12 @@ def convert_to_nvfp4(
         percentile_key = f"scale_p{input_scale_summary_percentile}"
         summary_layers = summary.get("layers", [])
         summary_map: Dict[str, torch.Tensor] = {}
+        summary_rows_by_layer: Dict[str, Dict] = {}
         for row in summary_layers:
             layer = row.get("layer")
             if not layer:
                 continue
+            summary_rows_by_layer[layer] = row
             if percentile_key in row:
                 val = float(row[percentile_key])
             elif "scale_max" in row:
@@ -1814,6 +1832,69 @@ def convert_to_nvfp4(
                 f"mean={(sum(vals)/len(vals)):.6f}"
             )
             input_scale_source = {k: "summary" for k in input_scale_map.keys()}
+
+        if input_scale_summary_fp16_std:
+            if not summary_rows_by_layer:
+                print("Warning: summary JSON has no layers; cannot select FP16 candidates.")
+            else:
+                if input_scale_summary_std_threshold is None:
+                    std_vals = []
+                    for row in summary_rows_by_layer.values():
+                        try:
+                            v = float(row.get("scale_std"))
+                        except Exception:
+                            continue
+                        if v > 0:
+                            std_vals.append(v)
+                    if std_vals:
+                        std_vals.sort()
+                        idx = int((len(std_vals) - 1) * 0.90)
+                        input_scale_summary_std_threshold = std_vals[idx]
+                        print(
+                            f"Summary FP16 selection: auto scale_std threshold (p90) = {input_scale_summary_std_threshold:.6f}"
+                        )
+                flagged_layers: List[str] = []
+                for layer, row in summary_rows_by_layer.items():
+                    try:
+                        scale_std = row.get("scale_std")
+                        scale_mean = row.get("scale_mean")
+                        if scale_std is None or scale_mean is None:
+                            continue
+                        scale_std = float(scale_std)
+                        scale_mean = float(scale_mean)
+                    except Exception:
+                        continue
+
+                    if scale_mean <= 0:
+                        continue
+
+                    cv = scale_std / scale_mean
+                    hit_std = (
+                        input_scale_summary_std_threshold is not None
+                        and scale_std >= input_scale_summary_std_threshold
+                    )
+                    hit_cv = (
+                        input_scale_summary_cv_threshold is not None
+                        and cv >= input_scale_summary_cv_threshold
+                    )
+                    if hit_std or hit_cv:
+                        flagged_layers.append(layer)
+
+                if flagged_layers:
+                    flagged_set = set(flagged_layers)
+                    moved_nvfp4 = flagged_set & quantize_layers
+                    moved_fp8 = flagged_set & fp8_layers
+                    if moved_nvfp4 or moved_fp8:
+                        quantize_layers -= moved_nvfp4
+                        fp8_layers -= moved_fp8
+                        skip_layers |= (moved_nvfp4 | moved_fp8)
+                    print(
+                        "Summary FP16 selection: "
+                        f"flagged={len(flagged_set)}, moved_nvfp4={len(moved_nvfp4)}, "
+                        f"moved_fp8={len(moved_fp8)}"
+                    )
+                else:
+                    print("Summary FP16 selection: flagged=0")
 
     if add_input_scale and input_scale_from:
         input_scale_path = Path(input_scale_from)
@@ -2464,6 +2545,26 @@ Supported models:
     )
 
     parser.add_argument(
+        "--input-scale-summary-fp16-std",
+        action="store_true",
+        help="Move high-variance layers to FP16/BF16 based on summary stats",
+    )
+
+    parser.add_argument(
+        "--input-scale-summary-std-threshold",
+        type=float,
+        default=None,
+        help="Absolute scale_std threshold for FP16/BF16 selection (default: auto p90)",
+    )
+
+    parser.add_argument(
+        "--input-scale-summary-cv-threshold",
+        type=float,
+        default=0.4,
+        help="Relative std/mean (CV) threshold for FP16/BF16 selection (default: 0.4)",
+    )
+
+    parser.add_argument(
         "--input-scale-layer-summary",
         action="store_true",
         help="Print per-layer input_scale values after conversion",
@@ -2590,6 +2691,9 @@ Supported models:
             input_scale_summary_json=args.input_scale_summary_json,
             input_scale_summary_percentile=args.input_scale_summary_percentile,
             input_scale_summary_multiplier=args.input_scale_summary_multiplier,
+            input_scale_summary_fp16_std=args.input_scale_summary_fp16_std,
+            input_scale_summary_std_threshold=args.input_scale_summary_std_threshold,
+            input_scale_summary_cv_threshold=args.input_scale_summary_cv_threshold,
             input_scale_layer_summary=args.input_scale_layer_summary,
             full_precision_mm=args.full_precision_mm,
             full_precision_mm_layers=_load_layer_list(args.full_precision_mm_layers),
