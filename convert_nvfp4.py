@@ -1709,6 +1709,17 @@ def convert_to_nvfp4(
             quantize_layers -= ffn_layers
             fp8_layers |= ffn_layers
             print(f"FFN override: moved {len(ffn_layers)} layers to FP8")
+
+    if min_ffn2_fp16:
+        ffn2_layers = {l for l in quantize_layers if re.search(r"\.ffn\.2\b", l)}
+        ffn2_layers |= {l for l in fp8_layers if re.search(r"\.ffn\.2\b", l)}
+        if ffn2_layers:
+            quantize_layers -= ffn2_layers
+            fp8_layers -= ffn2_layers
+            skip_layers |= ffn2_layers
+            print(f"FFN.2 override: moved {len(ffn2_layers)} layers to FP16/BF16")
+
+    if min_ffn_fp8:
         still_nvfp4_ffn = {l for l in quantize_layers if re.search(r"\.ffn\.(0|2)\b", l)}
         ffn_fp8 = {l for l in fp8_layers if re.search(r"\.ffn\.(0|2)\b", l)}
         ffn_fp16 = {l for l in skip_layers if re.search(r"\.ffn\.(0|2)\b", l)}
@@ -1721,15 +1732,6 @@ def convert_to_nvfp4(
             print(
                 f"Warning: {len(still_nvfp4_ffn)} FFN layers remain NVFP4 despite --min-ffn-fp8."
             )
-
-    if min_ffn2_fp16:
-        ffn2_layers = {l for l in quantize_layers if re.search(r"\.ffn\.2\b", l)}
-        ffn2_layers |= {l for l in fp8_layers if re.search(r"\.ffn\.2\b", l)}
-        if ffn2_layers:
-            quantize_layers -= ffn2_layers
-            fp8_layers -= ffn2_layers
-            skip_layers |= ffn2_layers
-            print(f"FFN.2 override: moved {len(ffn2_layers)} layers to FP16/BF16")
 
     # Print preset info if used
     if preset and classify_info.get("num_layers"):
