@@ -1,5 +1,19 @@
 # NVFP4 Mixed Quantization Project
 
+# Notes about workspace directory
+
+You might need to edit or scan/analyze the ComfyUI sourcecode. This is available in `comfyui-source` but is a symlink / junction. THIS CAN LOOP if you go into `comfyui-source\nvfp4-conv` so keep out!
+
+You might need the comfy-kitchen sourecode (this contains multiple backends for tensor handling in modern comfyui, enabling nvfp4 code). This is checked out in `comfy-kitchen` in the workspace. This is just for you to reference / analyze, not modify.
+
+# Notes about python environment
+
+We are working in the `comfy2` venv that I use to run my ComfyUI installation. This means it has a lot of libraries ready to go like pytorch, diffuser, safetensors, etc...
+
+Do _not_ start another venv, and always use this one to execute scripts or snippets.
+
+Do not install new dependencies without asking first (or better yet, give the user the command and let them do it).
+
 ## Project Goal
 
 Create a script to quantize diffusion models from FP32/FP16 to **mixed-precision NVFP4** format that works with ComfyUI and produces clean, artifact-free output.
