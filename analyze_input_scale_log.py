@@ -68,6 +68,16 @@ def _percentile(sorted_vals: List[float], pct: int) -> float:
     return d0 + d1
 
 
+def _stddev(values: List[float]) -> float:
+    if not values:
+        return float("nan")
+    if len(values) == 1:
+        return 0.0
+    mean = sum(values) / len(values)
+    var = sum((v - mean) ** 2 for v in values) / len(values)
+    return math.sqrt(var)
+
+
 def _write_csv(path: Path, rows: List[Dict[str, object]], fields: List[str]) -> None:
     lines = [",".join(fields)]
     for row in rows:
@@ -157,6 +167,7 @@ def main() -> None:
             "scale_min": scales_sorted[0],
             "scale_max": scales_sorted[-1],
             "scale_mean": sum(scales_sorted) / len(scales_sorted),
+            "scale_std": _stddev(scales_sorted),
         }
         for pct in args.percentiles:
             row[f"scale_p{pct}"] = _percentile(scales_sorted, pct)
@@ -167,6 +178,7 @@ def main() -> None:
                     "amax_min": amax_sorted[0],
                     "amax_max": amax_sorted[-1],
                     "amax_mean": sum(amax_sorted) / len(amax_sorted),
+                    "amax_std": _stddev(amax_sorted),
                 }
             )
             for pct in args.percentiles:
@@ -181,6 +193,7 @@ def main() -> None:
         "scale_min",
         "scale_max",
         "scale_mean",
+        "scale_std",
     ] + [f"scale_p{p}" for p in args.percentiles]
 
     if rows and "amax_min" in rows[0]:
@@ -188,6 +201,7 @@ def main() -> None:
             "amax_min",
             "amax_max",
             "amax_mean",
+            "amax_std",
         ] + [f"amax_p{p}" for p in args.percentiles]
 
     _write_csv(Path(args.csv), rows, fields)
