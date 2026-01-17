@@ -1435,6 +1435,16 @@ def classify_layers(
 
         # Smart preset overrides (only when preset == "smart")
         if preset == "smart":
+            # Keep first 2 and last 2 blocks at FP16 (if block count known)
+            if num_layers > 0 and layer_name.startswith("blocks."):
+                try:
+                    block_idx = int(layer_name.split(".")[1])
+                except Exception:
+                    block_idx = -1
+                if block_idx in {0, 1} or block_idx >= max(0, num_layers - 2):
+                    skip_layers.add(layer_name)
+                    continue
+
             # Non-block layers stay FP16
             if not layer_name.startswith("blocks."):
                 skip_layers.add(layer_name)
