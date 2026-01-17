@@ -290,7 +290,14 @@ SMART_PRESET_CONFIG = {
     ),
     "skip_patterns": SMART_IO_SKIP_PATTERNS,
     "fp8_patterns": SMART_V_PROJECTION_PATTERNS + SMART_DOWN_PROJECTION_PATTERNS,
+    "fp32_keep_patterns": [
+        r"^patch_embedding\.",
+        r"^patch_embedding$",
+    ],
 }
+
+# Smart preset: keep very small layers in FP16
+SMART_MIN_PARAMS_FP16 = 12000
 
 # Available presets
 PRESETS = {
@@ -1425,6 +1432,33 @@ def classify_layers(
         if any(p.search(layer_name) for p in exclude_re):
             skip_layers.add(layer_name)
             continue
+
+        # Smart preset overrides (only when preset == "smart")
+        if preset == "smart":
+            # Non-block layers stay FP16
+            if not layer_name.startswith("blocks."):
+                skip_layers.add(layer_name)
+                continue
+
+            # self_attn.norm* stays FP16
+            if ".self_attn.norm" in layer_name:
+                skip_layers.add(layer_name)
+                continue
+
+            # ffn.2 stays FP16
+            if re.search(r"\.ffn\.2\b", layer_name):
+                skip_layers.add(layer_name)
+                continue
+
+            # *.v projections stay FP16 (not FP8)
+            if re.search(r"\.v\b", layer_name):
+                skip_layers.add(layer_name)
+                continue
+
+            # Very small layers stay FP16
+            if tensor.numel() < SMART_MIN_PARAMS_FP16:
+                skip_layers.add(layer_name)
+                continue
 
         # Check FP8 patterns (can be FP8 or FP16 depending on --use-fp8)
         if any(p.search(layer_name) for p in fp8_re):
