@@ -1557,6 +1557,7 @@ def convert_to_nvfp4(
     include_patterns: Optional[List[str]] = None,
     gguf_path: Optional[str] = None,
     gguf_nvfp4_max_bitdepth: int = 4,
+    gguf_keep_edge_blocks_fp16: bool = False,
     min_ffn_fp8: bool = False,
     min_ffn2_fp16: bool = False,
     add_input_scale: bool = True,
@@ -1603,6 +1604,7 @@ def convert_to_nvfp4(
         include_patterns: Patterns to force include
         gguf_path: Optional path to GGUF for precision mapping
         gguf_nvfp4_max_bitdepth: Bitdepth threshold for NVFP4 (Qn <= threshold -> NVFP4, else FP8)
+        gguf_keep_edge_blocks_fp16: Keep first 2 and last 2 blocks at FP16/BF16 in GGUF mode
         min_ffn_fp8: Ensure FFN up/down (ffn.0/ffn.2) are at least FP8
         min_ffn2_fp16: Force FFN down projection (ffn.2) to FP16/BF16
         add_input_scale: Whether to write input_scale tensors for NVFP4 layers
@@ -1647,6 +1649,8 @@ def convert_to_nvfp4(
 
     if gguf_nvfp4_max_bitdepth < 1:
         raise ValueError("--gguf-nvfp4-max-bitdepth must be >= 1")
+    if gguf_keep_edge_blocks_fp16 and not gguf_path:
+        print("Warning: --gguf-keep-edge-blocks-fp16 ignored because --gguf was not set.")
     if gguf_path and preset:
         print("Warning: --gguf overrides preset/mode layer selection.")
     if input_scale_value is not None and not add_input_scale:
@@ -1763,6 +1767,27 @@ def convert_to_nvfp4(
                 f"F16/BF16 -> {dtype}, F32 -> FP32"
             )
         print(f"GGUF mapping: {gguf_map}")
+
+        if gguf_keep_edge_blocks_fp16:
+            num_layers = detect_num_layers(tensor_names)
+            if num_layers > 0:
+                edge_blocks = {0, 1, num_layers - 2, num_layers - 1}
+                edge_layers = {
+                    l for l in (quantize_layers | fp8_layers) if l.startswith("blocks.")
+                    if int(l.split(".")[1]) in edge_blocks
+                }
+                if edge_layers:
+                    moved_nvfp4 = edge_layers & quantize_layers
+                    moved_fp8 = edge_layers & fp8_layers
+                    quantize_layers -= moved_nvfp4
+                    fp8_layers -= moved_fp8
+                    skip_layers |= edge_layers
+                    print(
+                        "GGUF edge blocks: "
+                        f"moved_nvfp4={len(moved_nvfp4)}, moved_fp8={len(moved_fp8)}"
+                    )
+            else:
+                print("GGUF edge blocks: could not detect block count; skipping.")
     else:
         quantize_layers, fp8_layers, skip_layers, classify_info = classify_layers(
             tensor_names,
@@ -2495,6 +2520,12 @@ Supported models:
     )
 
     parser.add_argument(
+        "--gguf-keep-edge-blocks-fp16",
+        action="store_true",
+        help="Keep first two and last two blocks at FP16/BF16 in GGUF mode",
+    )
+
+    parser.add_argument(
         "--min-ffn-fp8",
         action="store_true",
         help="Force FFN up/down projections (ffn.0/ffn.2) to be at least FP8",
@@ -2734,6 +2765,7 @@ Supported models:
             include_patterns=args.include,
             gguf_path=args.gguf,
             gguf_nvfp4_max_bitdepth=args.gguf_nvfp4_max_bitdepth,
+            gguf_keep_edge_blocks_fp16=args.gguf_keep_edge_blocks_fp16,
             min_ffn_fp8=args.min_ffn_fp8,
             min_ffn2_fp16=args.min_ffn2_fp16,
             add_input_scale=not args.no_input_scale,
