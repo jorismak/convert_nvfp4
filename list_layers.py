@@ -14,6 +14,7 @@ Options:
     --only-blocks        Convenience filter for r"(^|\\.)blocks\\.\\d+\\."
     --show-dtype         Append dtype/format info to each line (may be slow)
     --show-params        Append parameter count per layer/tensor (may be slow)
+    --show-full-precision-mm   Append full_precision_matrix_mult flag per layer
     --gguf               Treat input as GGUF and use GGUF tensor types (Q4_0, F16, etc)
   --sort               Sort output (default: True)
 """
@@ -67,9 +68,59 @@ def _load_index(index_path: Path) -> List[str]:
     return list(weight_map.keys())
 
 
+def _load_index_metadata(index_path: Path) -> Dict[str, str]:
+    data = json.loads(index_path.read_text(encoding="utf-8"))
+    metadata = data.get("metadata", {})
+    if not isinstance(metadata, dict):
+        return {}
+    return {str(k): str(v) for k, v in metadata.items()}
+
+
 def _load_safetensors(file_path: Path) -> List[str]:
     with safe_open(file_path, framework="pt", device="cpu") as f:
         return list(f.keys())
+
+
+def _load_safetensors_metadata(file_path: Path) -> Dict[str, str]:
+    with safe_open(file_path, framework="pt", device="cpu") as f:
+        return f.metadata() or {}
+
+
+def _load_quant_metadata(input_path: Path) -> Dict[str, Dict]:
+    metadata: Dict[str, str] = {}
+
+    if input_path.suffix == ".gguf":
+        return {}
+
+    if input_path.is_dir():
+        index_files = list(input_path.glob("*.safetensors.index.json"))
+        if index_files:
+            metadata = _load_index_metadata(index_files[0])
+        else:
+            safes = list(input_path.glob("*.safetensors"))
+            if len(safes) == 1:
+                metadata = _load_safetensors_metadata(safes[0])
+        if not metadata:
+            return {}
+
+    elif input_path.suffix == ".json" or str(input_path).endswith(".index.json"):
+        metadata = _load_index_metadata(input_path)
+
+    elif input_path.suffix == ".safetensors":
+        metadata = _load_safetensors_metadata(input_path)
+
+    if not metadata:
+        return {}
+
+    raw = metadata.get("_quantization_metadata")
+    if not raw:
+        return {}
+    try:
+        qmeta = json.loads(raw)
+    except Exception:
+        return {}
+    layers = qmeta.get("layers", {})
+    return layers if isinstance(layers, dict) else {}
 
 
 def _load_gguf_names(file_path: Path) -> List[str]:
@@ -321,6 +372,11 @@ def main() -> None:
     parser.add_argument("--only-blocks", action="store_true", help="Filter to blocks.N.*")
     parser.add_argument("--show-dtype", action="store_true", help="Append dtype/format info")
     parser.add_argument("--show-params", action="store_true", help="Append parameter counts")
+    parser.add_argument(
+        "--show-full-precision-mm",
+        action="store_true",
+        help="Append full_precision_matrix_mult flag per layer (from _quantization_metadata)",
+    )
     parser.add_argument("--gguf", action="store_true", help="Treat input as GGUF")
     parser.add_argument("--sort", action="store_true", default=True)
     args = parser.parse_args()
@@ -352,6 +408,10 @@ def main() -> None:
     if args.show_params:
         numel_map = _load_numel(input_path, _detect_input(input_path))
 
+    quant_layers: Dict[str, Dict] = {}
+    if args.show_full_precision_mm and args.mode == "layer":
+        quant_layers = _load_quant_metadata(input_path)
+
     for name in names:
         parts = [name]
 
@@ -368,6 +428,14 @@ def main() -> None:
             else:
                 count = numel_map.get(name, 0)
             parts.append(f"params={count}")
+
+        if args.show_full_precision_mm:
+            if args.mode == "layer":
+                layer_conf = quant_layers.get(name, {})
+                flag = bool(layer_conf.get("full_precision_matrix_mult", False))
+                parts.append(f"full_precision_mm={str(flag).lower()}")
+            else:
+                parts.append("full_precision_mm=unknown")
 
         print("\t".join(parts))
 
