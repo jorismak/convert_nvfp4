@@ -1611,6 +1611,7 @@ def convert_to_nvfp4(
     input_scale_layer_summary: bool = False,
     sensitivity_json: Optional[str] = None,
     sensitivity_threshold: Optional[float] = None,
+    sensitivity_action: str = "fp16",
     full_precision_mm: bool = False,
     full_precision_mm_layers: Optional[Set[str]] = None,
     full_precision_mm_patterns: Optional[List[str]] = None,
@@ -1706,6 +1707,8 @@ def convert_to_nvfp4(
         raise ValueError("--input-scale-summary-cv-threshold must be > 0")
     if sensitivity_threshold is not None and sensitivity_threshold <= 0:
         raise ValueError("--sensitivity-threshold must be > 0")
+    if sensitivity_action not in {"fp16", "full_precision_mm"}:
+        raise ValueError("--sensitivity-action must be 'fp16' or 'full_precision_mm'")
 
     input_scale_map: Dict[str, torch.Tensor] = {}
     input_scale_source: Dict[str, str] = {}
@@ -1854,22 +1857,29 @@ def convert_to_nvfp4(
             skip_layers |= ffn2_layers
             print(f"FFN.2 override: moved {len(ffn2_layers)} layers to FP16/BF16")
 
-    # Sensitivity-based FP16 override (from sensitivity.json)
+    # Sensitivity-based overrides (from sensitivity.json)
+    sensitivity_flagged_layers: Set[str] = set()
     if sensitivity_json and sensitivity_threshold is not None:
-        flagged_layers = _load_sensitivity_overrides(
+        sensitivity_flagged_layers = _load_sensitivity_overrides(
             sensitivity_json, sensitivity_threshold
         )
-        if flagged_layers:
-            moved_nvfp4 = flagged_layers & quantize_layers
-            moved_fp8 = flagged_layers & fp8_layers
-            quantize_layers -= moved_nvfp4
-            fp8_layers -= moved_fp8
-            skip_layers |= (moved_nvfp4 | moved_fp8)
-            print(
-                "Sensitivity override: "
-                f"flagged={len(flagged_layers)}, moved_nvfp4={len(moved_nvfp4)}, "
-                f"moved_fp8={len(moved_fp8)} (threshold={sensitivity_threshold})"
-            )
+        if sensitivity_flagged_layers:
+            if sensitivity_action == "fp16":
+                moved_nvfp4 = sensitivity_flagged_layers & quantize_layers
+                moved_fp8 = sensitivity_flagged_layers & fp8_layers
+                quantize_layers -= moved_nvfp4
+                fp8_layers -= moved_fp8
+                skip_layers |= (moved_nvfp4 | moved_fp8)
+                print(
+                    "Sensitivity override (fp16): "
+                    f"flagged={len(sensitivity_flagged_layers)}, moved_nvfp4={len(moved_nvfp4)}, "
+                    f"moved_fp8={len(moved_fp8)} (threshold={sensitivity_threshold})"
+                )
+            else:
+                print(
+                    "Sensitivity override (full_precision_mm): "
+                    f"flagged={len(sensitivity_flagged_layers)} (threshold={sensitivity_threshold})"
+                )
 
     if min_ffn_fp8:
         still_nvfp4_ffn = {l for l in quantize_layers if re.search(r"\.ffn\.(0|2)\b", l)}
@@ -2057,6 +2067,8 @@ def convert_to_nvfp4(
             )
 
     full_precision_mm_layer_set = set(full_precision_mm_layers or [])
+    if sensitivity_action == "full_precision_mm" and sensitivity_flagged_layers:
+        full_precision_mm_layer_set |= sensitivity_flagged_layers
     full_precision_mm_pattern_list = list(full_precision_mm_patterns or [])
     if full_precision_mm_cross_attn_kv:
         full_precision_mm_pattern_list.extend(
@@ -2399,6 +2411,7 @@ def convert_to_nvfp4(
     if sensitivity_json and sensitivity_threshold is not None:
         output_metadata["nvfp4_sensitivity_json"] = str(sensitivity_json)
         output_metadata["nvfp4_sensitivity_threshold"] = str(sensitivity_threshold)
+        output_metadata["nvfp4_sensitivity_action"] = str(sensitivity_action)
     if full_precision_mm:
         output_metadata["nvfp4_full_precision_mm"] = "true"
     elif selected_full_precision_layers:
@@ -2730,6 +2743,13 @@ Supported models:
     )
 
     parser.add_argument(
+        "--sensitivity-action",
+        choices=["fp16", "full_precision_mm"],
+        default="fp16",
+        help="Action for sensitivity layers: move to FP16/BF16 or mark full-precision matmul",
+    )
+
+    parser.add_argument(
         "--full-precision-mm",
         action="store_true",
         help="Force full-precision matmul for quantized layers (diagnostic)",
@@ -2857,6 +2877,7 @@ Supported models:
             input_scale_layer_summary=args.input_scale_layer_summary,
             sensitivity_json=args.sensitivity_json,
             sensitivity_threshold=args.sensitivity_threshold,
+            sensitivity_action=args.sensitivity_action,
             full_precision_mm=args.full_precision_mm,
             full_precision_mm_layers=_load_layer_list(args.full_precision_mm_layers),
             full_precision_mm_patterns=args.full_precision_mm_pattern,
