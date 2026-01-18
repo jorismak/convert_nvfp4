@@ -277,6 +277,9 @@ def _summarize_layer_format(layer: str, dtype_map: Dict[str, str]) -> str:
     else:
         weight = f"{layer}.weight"
         w_dtype = dtype_map.get(weight)
+        if not w_dtype:
+            scale = f"{layer}.scale"
+            w_dtype = dtype_map.get(scale)
     if not w_dtype:
         return "unknown"
 
