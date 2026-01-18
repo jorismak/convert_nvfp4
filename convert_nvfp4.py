@@ -2,98 +2,63 @@
 """
 NVFP4 Quantization Converter for ComfyUI
 
-Converts safetensors diffusion models to NVFP4 (4-bit floating point) quantization
-format compatible with ComfyUI's mixed precision system.
-
-Supports both single safetensors files and sharded models (multiple .safetensors
-files with an index.json).
+Converts safetensors diffusion models to NVFP4 (4-bit floating point) for
+ComfyUI mixed precision. Works on single safetensors or sharded models.
 
 Supported models:
-- Wan2.1 (t2v, i2v, vace, camera, etc.)
-- Wan2.2 (t2v, s2v, animate, etc.)
+- Wan2.1 / Wan2.2 (all variants)
 - Qwen Image / Qwen Image Edit
 - Any model with Linear layers
 
 Usage:
-  python convert_nvfp4.py input.safetensors output.safetensors [options]
-  python convert_nvfp4.py model_index.json output.safetensors [options]
-  python convert_nvfp4.py /path/to/sharded_model/ output.safetensors [options]
+    python convert_nvfp4.py input.safetensors output.safetensors [options]
+    python convert_nvfp4.py model.safetensors.index.json output.safetensors [options]
+    python convert_nvfp4.py /path/to/sharded_model/ output.safetensors [options]
 
-Examples:
-  # Convert single file
-  python convert_nvfp4.py model.safetensors model_nvfp4.safetensors
+Quick start:
+    # Convert a single file
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors
 
-  # Convert sharded model (via index.json)
-  python convert_nvfp4.py model.safetensors.index.json model_nvfp4.safetensors
+    # Sharded model (index.json)
+    python convert_nvfp4.py model.safetensors.index.json model_nvfp4.safetensors
 
-  # Convert sharded model (via directory)
-  python convert_nvfp4.py ./my_model/ model_nvfp4.safetensors
+    # Use a preset (recommended for known models)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors -p wan
 
-  # Safe mode - skip sensitive layers
-  python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --mode safe
+    # Safe mode (skip sensitive layers)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors -m safe
 
-  # Preview what would be quantized
-  python convert_nvfp4.py model.safetensors output.safetensors --dry-run
+Input scale sources (priority order):
+    1) --input-scale-from (exact per-layer values from a reference NVFP4 model)
+    2) --input-scale-summary-json (per-layer stats from analyze_input_scale_log.py)
+    3) --calibrate-from-fp16 (WAN activation calibration)
+    4) --input-scale-value (fixed value for all layers)
+    5) fallback heuristic (if none of the above are provided)
 
-    # Disable input_scale tensors (use ComfyUI dynamic quantization)
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --no-input-scale
+Dynamic scaling:
+    --no-input-scale uses ComfyUI dynamic scaling. This is required for ComfyUI
+    calibration passes, but is unstable for inference quality.
 
-    # Use comfy_kitchen quantizer for exact NVFP4 packing/layout
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --use-ck-quant
+Common options:
+    # Preview what would be quantized
+    python convert_nvfp4.py model.safetensors output.safetensors -n
 
-    # Fixed input_scale for activations (avoids clamping issues)
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-value 48.0
+    # Copy input_scale from a reference NVFP4 model
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
+            --input-scale-from ref_nvfp4.safetensors
 
-    # Copy input_scale from a reference NVFP4 model (same architecture)
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-from ref_nvfp4.safetensors
+    # Use per-layer input_scale summary (p99 with a small margin)
+    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
+            --input-scale-summary-json nvfp4_scales_summary.json \
+            --input-scale-summary-percentile 99 \
+            --input-scale-summary-multiplier 1.05
 
     # Calibrate input_scale from FP16/FP32 WAN model activations
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --calibrate-from-fp16 wan_fp16.safetensors
-
-    # Use per-layer input_scale from summary JSON (from analyze_input_scale_log.py)
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-summary-json nvfp4_scales_summary.json --input-scale-summary-percentile 99
-
-    # Add margin to summary-derived input_scale
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-summary-json nvfp4_scales_summary.json --input-scale-summary-percentile 99 --input-scale-summary-multiplier 1.05
-
-    # Use summary-derived input_scales and force high-variance layers to FP16
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
-        --input-scale-summary-json nvfp4_scales_summary.json \
-        --input-scale-summary-percentile 99 \
-        --input-scale-summary-fp16-std
+            --calibrate-from-fp16 wan_fp16.safetensors
 
-    # Print per-layer input_scale used
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --input-scale-layer-summary
-
-    # Force full-precision matmul (diagnostic)
+    # Full-precision matmul (diagnostic)
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --full-precision-mm
-
-    # Selective full-precision matmul using a layer list
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
-        --full-precision-mm-layers full_precision_layers.txt
-
-    # Selective full-precision matmul using regex patterns (repeatable)
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
-        --full-precision-mm-pattern "\\.self_attn\\.q\b" \
-        --full-precision-mm-pattern "\\.cross_attn\\.q\b"
-
-    # Full-precision matmul for cross_attn K/V (WAN models)
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
-        --full-precision-mm-cross-attn-kv
-
-    # Full-precision matmul for cross_attn Q/K/V/O (WAN models)
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
-        --full-precision-mm-cross-attn-qkvo
-
-    # Full-precision matmul for self_attn Q/K/V/O (WAN models)
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
-        --full-precision-mm-self-attn-qkvo
-
-    # Full-precision matmul for FFN up/down projections (WAN models)
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
-        --full-precision-mm-ffn-up
-    python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
-        --full-precision-mm-ffn-down
 """
 
 import argparse
@@ -107,6 +72,7 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import save_file
 from tqdm import tqdm
+from nvfp4_calibration import compute_input_scales_from_fp16_state_dict
 
 # =============================================================================
 # Constants
@@ -440,71 +406,6 @@ def detect_model_type(tensor_names: List[str]) -> Optional[str]:
     return None
 
 
-# =============================================================================
-# Activation Calibration (WAN models)
-# =============================================================================
-
-
-class _ActivationCollector:
-    """Collects input activation statistics for linear layers."""
-
-    def __init__(self):
-        self.amax_values: Dict[str, List[float]] = {}
-        self.hooks = []
-
-    def make_hook(self, name):
-        def hook(module, input, output):
-            x = input[0] if isinstance(input, tuple) else input
-            if x is not None and isinstance(x, torch.Tensor):
-                amax = x.abs().amax().item()
-                self.amax_values.setdefault(name, []).append(amax)
-
-        return hook
-
-    def register_hooks(self, model, layer_names: Set[str]):
-        import torch.nn as nn
-
-        for name, module in model.named_modules():
-            if name in layer_names and isinstance(module, nn.Linear):
-                hook = module.register_forward_hook(self.make_hook(name))
-                self.hooks.append(hook)
-        print(f"Registered {len(self.hooks)} activation hooks")
-
-    def remove_hooks(self):
-        for hook in self.hooks:
-            hook.remove()
-        self.hooks = []
-
-    def get_input_scales(self, method: str = "max") -> Dict[str, float]:
-        input_scales = {}
-        for name, amaxes in self.amax_values.items():
-            if not amaxes:
-                continue
-            if method == "max":
-                amax = max(amaxes)
-            elif method == "mean":
-                amax = sum(amaxes) / len(amaxes)
-            elif method == "percentile_99":
-                sorted_amaxes = sorted(amaxes)
-                idx = int(len(sorted_amaxes) * 0.99)
-                amax = sorted_amaxes[min(idx, len(sorted_amaxes) - 1)]
-            else:
-                raise ValueError(f"Unknown input_scale method: {method}")
-
-            # NVFP4 input quantization scale
-            scale = amax / (F8_E4M3_MAX * F4_E2M1_MAX)
-            input_scales[name] = max(scale, 1e-12)
-
-        return input_scales
-
-
-def _resolve_comfyui_root(user_root: Optional[str]) -> Path:
-    if user_root:
-        return Path(user_root)
-    # Default to parent of this repo (nvfp4-conv -> ComfyUI)
-    return Path(__file__).resolve().parents[1]
-
-
 def _load_layer_list(path: Optional[str]) -> Set[str]:
     if not path:
         return set()
@@ -572,128 +473,6 @@ def _load_state_dict_for_calibration(model_path: str) -> Dict[str, torch.Tensor]
     return torch.load(path, map_location="cpu")
 
 
-def _build_wan_model_for_calibration(
-    model_path: str, device: str, comfyui_root: Optional[str]
-):
-    import sys
-
-    root = _resolve_comfyui_root(comfyui_root)
-    sys.path.insert(0, str(root))
-
-    from comfy.ldm.wan.model import WanModel
-    import comfy.ops as ops
-
-    state_dict = _load_state_dict_for_calibration(model_path)
-
-    hidden_size = state_dict["blocks.0.self_attn.q.weight"].shape[0]
-    num_blocks = (
-        max(int(k.split(".")[1]) for k in state_dict.keys() if k.startswith("blocks."))
-        + 1
-    )
-    text_dim = state_dict["text_embedding.0.weight"].shape[1]
-    ffn_dim = state_dict["blocks.0.ffn.0.weight"].shape[0]
-    in_dim = state_dict["patch_embedding.weight"].shape[1]
-    head_out = state_dict["head.head.weight"].shape[0]
-    out_dim = head_out // 4
-
-    model = WanModel(
-        model_type="t2v",
-        patch_size=(1, 2, 2),
-        in_dim=in_dim,
-        dim=hidden_size,
-        ffn_dim=ffn_dim,
-        text_dim=text_dim,
-        out_dim=out_dim,
-        num_heads=hidden_size // 128,
-        num_layers=num_blocks,
-        dtype=torch.bfloat16,
-        device="cpu",
-        operations=ops.manual_cast,
-    )
-
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    if missing:
-        print(f"  Missing keys during calibration load: {len(missing)}")
-    if unexpected:
-        print(f"  Unexpected keys during calibration load: {len(unexpected)}")
-
-    model = model.to(device=device)
-    model.eval()
-    return model
-
-
-def _run_wan_calibration_passes(
-    model,
-    in_dim: int,
-    num_samples: int,
-    device: str,
-    batch_size: int = 1,
-):
-    text_dim = model.text_dim
-    text_len = 512
-
-    latent_channels = in_dim
-    latent_t = 5
-    latent_h = 30
-    latent_w = 52
-
-    for i in range(num_samples):
-        x = torch.randn(
-            batch_size,
-            latent_channels,
-            latent_t,
-            latent_h,
-            latent_w,
-            device=device,
-            dtype=torch.bfloat16,
-        )
-        timestep = torch.randint(0, 1000, (batch_size,), device=device, dtype=torch.long)
-        context = torch.randn(
-            batch_size, text_len, text_dim, device=device, dtype=torch.bfloat16
-        )
-
-        with torch.no_grad():
-            try:
-                _ = model(x, timestep, context)
-            except Exception as e:
-                print(f"Calibration forward error: {e}")
-                break
-
-        if i % 2 == 0 and device == "cuda":
-            torch.cuda.empty_cache()
-
-
-def compute_input_scales_from_fp16_model(
-    fp16_model_path: str,
-    layer_names: Set[str],
-    method: str,
-    num_samples: int,
-    device: str,
-    comfyui_root: Optional[str],
-) -> Dict[str, torch.Tensor]:
-    print("Computing input_scale from FP16/FP32 WAN model activations...")
-    model = _build_wan_model_for_calibration(fp16_model_path, device, comfyui_root)
-
-    collector = _ActivationCollector()
-    collector.register_hooks(model, layer_names)
-
-    in_dim = model.patch_embedding.weight.shape[1]
-    _run_wan_calibration_passes(model, in_dim, num_samples, device)
-
-    collector.remove_hooks()
-    input_scales = collector.get_input_scales(method=method)
-
-    if not input_scales:
-        print("Warning: No activation scales collected from FP16 model.")
-        return {}
-
-    scale_values = list(input_scales.values())
-    print(
-        f"input_scale range: {min(scale_values):.6f} - {max(scale_values):.6f} "
-        f"(mean {sum(scale_values) / len(scale_values):.6f})"
-    )
-
-    return {k: torch.tensor([v], dtype=torch.float32) for k, v in input_scales.items()}
 
 
 # =============================================================================
@@ -1529,56 +1308,6 @@ def classify_layers(
 
 
 # =============================================================================
-# Calibration
-# =============================================================================
-
-
-def calibrate_layer(
-    weight: torch.Tensor,
-    num_steps: int = 8,
-    batch_size: int = 4,
-    seq_len: int = 1024,
-) -> torch.Tensor:
-    """
-    Basic calibration to estimate input_scale for a Linear layer.
-
-    Uses random inputs with normal distribution to estimate
-    the typical range of activations.
-
-    Args:
-        weight: Weight tensor of shape (out_features, in_features)
-        num_steps: Number of calibration steps
-        batch_size: Batch size for calibration
-        seq_len: Sequence length for calibration
-
-    Returns:
-        input_scale tensor (scalar)
-    """
-    in_features = weight.shape[1]
-    device = weight.device
-    dtype = weight.dtype
-
-    # Track maximum activation value
-    amax = torch.tensor(0.0, device=device, dtype=torch.float32)
-
-    for _ in range(num_steps):
-        # Generate random input (normal distribution, similar to real activations)
-        x = torch.randn(batch_size, seq_len, in_features, device=device, dtype=dtype)
-
-        # Track amax
-        amax = torch.maximum(amax, torch.amax(x.abs()))
-
-    # Compute input scale for NVFP4 quantization
-    # When inputs are quantized to NVFP4, we need to use the combined scale formula
-    input_scale = amax / (F8_E4M3_MAX * F4_E2M1_MAX)
-
-    # Clamp to reasonable range
-    input_scale = torch.clamp(input_scale, min=1e-12)
-
-    return input_scale
-
-
-# =============================================================================
 # Main Conversion Logic
 # =============================================================================
 
@@ -1934,8 +1663,9 @@ def convert_to_nvfp4(
                 print(f"  {layer}: {tuple(weight.shape)} (Linear, cast to FP16/BF16)")
 
     if add_input_scale and calibrate_from_fp16:
-        input_scale_map = compute_input_scales_from_fp16_model(
-            calibrate_from_fp16,
+        state_dict = _load_state_dict_for_calibration(calibrate_from_fp16)
+        input_scale_map = compute_input_scales_from_fp16_state_dict(
+            state_dict,
             set(quantize_layers),
             input_scale_method,
             input_scale_samples,
@@ -2538,6 +2268,17 @@ Presets:
   qwen-image-edit - Qwen Image Edit 2511 (Nov 2025). Same as qwen-image but
                     optimized for the edit model variant.
 
+Input scale sources (priority order):
+    1) --input-scale-from (exact per-layer values from a reference NVFP4 model)
+    2) --input-scale-summary-json (per-layer stats from analyze_input_scale_log.py)
+    3) --calibrate-from-fp16 (WAN activation calibration)
+    4) --input-scale-value (fixed value for all layers)
+    5) fallback heuristic (if none of the above are provided)
+
+Dynamic scaling:
+    --no-input-scale uses ComfyUI dynamic scaling. This is required for ComfyUI
+    calibration passes, but is unstable for inference quality.
+
 Mixed Precision (--use-fp8):
     When using --use-fp8 with presets, some layers are kept in FP8 for quality.
     This provides better quality than pure NVFP4 with a moderate size increase.
@@ -2561,14 +2302,16 @@ Supported models:
         "output", help="Output safetensors file (single consolidated file)"
     )
 
-    parser.add_argument(
+    selection_group = parser.add_argument_group("Layer selection")
+    selection_group.add_argument(
+        "-m",
         "--mode",
         choices=["all", "safe"],
         default="all",
         help="Quantization mode: 'all' quantizes all Linear layers, 'safe' skips sensitive layers (default: all)",
     )
-
-    parser.add_argument(
+    selection_group.add_argument(
+        "-p",
         "--preset",
         choices=list(PRESETS.keys()),
         default=None,
@@ -2576,274 +2319,255 @@ Supported models:
         help="Use a model-specific preset (e.g., 'wan' for Wan 2.1/2.2 models). "
         "Presets configure optimal skip patterns for specific architectures.",
     )
+    selection_group.add_argument(
+        "--min-ffn-fp8",
+        action="store_true",
+        help="Force FFN up/down projections (ffn.0/ffn.2) to be at least FP8",
+    )
+    selection_group.add_argument(
+        "--min-ffn2-fp16",
+        action="store_true",
+        help="Force FFN down projections (ffn.2) to FP16/BF16",
+    )
+    selection_group.add_argument(
+        "-x",
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="Regex pattern for layers to skip (repeatable)",
+    )
+    selection_group.add_argument(
+        "-i",
+        "--include",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="Regex pattern to force include layers (overrides --mode safe; repeatable)",
+    )
 
-    parser.add_argument(
+    gguf_group = parser.add_argument_group("GGUF mapping")
+    gguf_group.add_argument(
+        "-g",
         "--gguf",
         default=None,
         metavar="PATH",
         help="Path to GGUF file for precision mapping (F32/F16/Qn -> FP32/FP16/NVFP4/FP8)",
     )
-
-    parser.add_argument(
+    gguf_group.add_argument(
         "--gguf-nvfp4-max-bitdepth",
         type=int,
         default=4,
         help="Max GGUF Q-bitdepth to map to NVFP4 (Qn <= threshold -> NVFP4, else FP8)",
     )
-
-    parser.add_argument(
+    gguf_group.add_argument(
         "--gguf-keep-edge-blocks-fp16",
         action="store_true",
         help="Keep first two and last two blocks at FP16/BF16 in GGUF mode",
     )
 
-    parser.add_argument(
-        "--min-ffn-fp8",
-        action="store_true",
-        help="Force FFN up/down projections (ffn.0/ffn.2) to be at least FP8",
-    )
-
-    parser.add_argument(
-        "--min-ffn2-fp16",
-        action="store_true",
-        help="Force FFN down projections (ffn.2) to FP16/BF16",
-    )
-
-    parser.add_argument(
-        "--exclude",
-        action="append",
-        default=[],
-        metavar="PATTERN",
-        help="Regex pattern for layers to skip (can specify multiple)",
-    )
-
-    parser.add_argument(
-        "--include",
-        action="append",
-        default=[],
-        metavar="PATTERN",
-        help="Regex pattern to force include layers (overrides --mode safe)",
-    )
-
-
-    parser.add_argument(
+    input_scale_group = parser.add_argument_group("Input scale sources")
+    input_scale_group.add_argument(
         "--no-input-scale",
         action="store_true",
-        help="Do not write input_scale tensors for NVFP4 layers",
+        help="Do not write input_scale tensors (ComfyUI uses dynamic scaling). Required for ComfyUI calibration passes, "
+        "but unstable for inference.",
     )
-
-    parser.add_argument(
+    input_scale_group.add_argument(
         "--input-scale-value",
         type=float,
         default=None,
-        help="Fixed input_scale value for activations (used when not calibrating)",
+        help="Fixed input_scale value (used when no file/summary/calibration is provided)",
     )
-
-    parser.add_argument(
+    input_scale_group.add_argument(
         "--input-scale-from",
         default=None,
         metavar="PATH",
-        help="Copy input_scale tensors from a reference NVFP4 safetensors file",
+        help="Copy input_scale tensors from a reference NVFP4 safetensors file (highest priority for matching layers)",
+    )
+    input_scale_group.add_argument(
+        "--input-scale-layer-summary",
+        action="store_true",
+        help="Print per-layer input_scale values after conversion",
     )
 
-    parser.add_argument(
+    calib_group = parser.add_argument_group("Input scale calibration (WAN)")
+    calib_group.add_argument(
         "--calibrate-from-fp16",
         dest="calibrate_from_fp16",
         default=None,
         metavar="PATH",
-        help="Calibrate input_scale from FP16/FP32 WAN model activations",
+        help="Measure activation ranges from a FP16/FP32 WAN model and use them as input_scale",
     )
-    parser.add_argument(
+    calib_group.add_argument(
         "--input-scale-from-fp16",
         dest="calibrate_from_fp16",
         metavar="PATH",
         help=argparse.SUPPRESS,
     )
-
-    parser.add_argument(
+    calib_group.add_argument(
         "--input-scale-method",
         choices=["max", "mean", "percentile_99"],
         default="max",
-        help="Method for input_scale aggregation (default: max)",
+        help="Aggregation method for calibration (default: max)",
     )
-
-    parser.add_argument(
+    calib_group.add_argument(
         "--input-scale-samples",
         type=int,
         default=8,
-        help="Number of activation samples for input_scale calibration",
+        help="Number of random activation samples for calibration",
     )
-
-    parser.add_argument(
+    calib_group.add_argument(
         "--comfyui-root",
         default=None,
         metavar="PATH",
         help="Path to ComfyUI root for WAN model loading (optional)",
     )
 
-    parser.add_argument(
+    summary_group = parser.add_argument_group("Input scale summary (analyze_input_scale_log.py)")
+    summary_group.add_argument(
         "--input-scale-summary-json",
         default=None,
         metavar="PATH",
-        help="Use per-layer input_scale from summary JSON",
+        help="Use per-layer input_scale from summary JSON (for matching layers)",
     )
-
-    parser.add_argument(
+    summary_group.add_argument(
         "--input-scale-summary-percentile",
         type=int,
         default=99,
-        help="Percentile to use from summary JSON (default: 99)",
+        help="Percentile key to use from summary JSON (default: 99)",
     )
-
-    parser.add_argument(
+    summary_group.add_argument(
         "--input-scale-summary-multiplier",
         type=float,
         default=1.0,
         help="Multiplier applied to summary-derived input_scale values (default: 1.0)",
     )
-
-    parser.add_argument(
+    summary_group.add_argument(
         "--input-scale-summary-fp16-std",
         action="store_true",
         help="Move high-variance layers to FP16/BF16 based on summary stats",
     )
-
-    parser.add_argument(
+    summary_group.add_argument(
         "--input-scale-summary-std-threshold",
         type=float,
         default=None,
         help="Absolute scale_std threshold for FP16/BF16 selection (default: auto p90)",
     )
-
-    parser.add_argument(
+    summary_group.add_argument(
         "--input-scale-summary-cv-threshold",
         type=float,
         default=0.4,
         help="Relative std/mean (CV) threshold for FP16/BF16 selection (default: 0.4)",
     )
 
-    parser.add_argument(
-        "--input-scale-layer-summary",
-        action="store_true",
-        help="Print per-layer input_scale values after conversion",
-    )
-
-    parser.add_argument(
+    sensitivity_group = parser.add_argument_group("Sensitivity overrides")
+    sensitivity_group.add_argument(
         "--sensitivity-json",
         default=None,
         metavar="PATH",
         help="Path to sensitivity.json (rel_rmse_mean stats) for FP16 overrides",
     )
-
-    parser.add_argument(
+    sensitivity_group.add_argument(
         "--sensitivity-threshold",
         type=float,
         default=None,
         help="rel_rmse_mean threshold; layers above this stay FP16/BF16",
     )
-
-    parser.add_argument(
+    sensitivity_group.add_argument(
         "--sensitivity-action",
         choices=["fp16", "full_precision_mm"],
         default="fp16",
         help="Action for sensitivity layers: move to FP16/BF16 or mark full-precision matmul",
     )
 
-    parser.add_argument(
+    full_precision_group = parser.add_argument_group("Full-precision matmul (diagnostic)")
+    full_precision_group.add_argument(
         "--full-precision-mm",
         action="store_true",
-        help="Force full-precision matmul for quantized layers (diagnostic)",
+        help="Force full-precision matmul for quantized layers",
     )
-
-    parser.add_argument(
+    full_precision_group.add_argument(
         "--full-precision-mm-layers",
         default=None,
         metavar="PATH",
         help="Path to text file with layer names to force full-precision matmul",
     )
-
-    parser.add_argument(
+    full_precision_group.add_argument(
         "--full-precision-mm-pattern",
         action="append",
         default=[],
         metavar="REGEX",
         help="Regex pattern (repeatable) to force full-precision matmul for matching layers",
     )
-
-    parser.add_argument(
+    full_precision_group.add_argument(
         "--full-precision-mm-cross-attn-kv",
         action="store_true",
         help="Force full-precision matmul for cross_attn K/V layers (WAN models)",
     )
-
-    parser.add_argument(
+    full_precision_group.add_argument(
         "--full-precision-mm-cross-attn-qkvo",
         action="store_true",
         help="Force full-precision matmul for cross_attn Q/K/V/O layers (WAN models)",
     )
-
-    parser.add_argument(
+    full_precision_group.add_argument(
         "--full-precision-mm-self-attn-qkvo",
         action="store_true",
         help="Force full-precision matmul for self_attn Q/K/V/O layers (WAN models)",
     )
-
-    parser.add_argument(
+    full_precision_group.add_argument(
         "--full-precision-mm-ffn-up",
         action="store_true",
         help="Force full-precision matmul for FFN up projections (ffn.0) (WAN models)",
     )
-
-    parser.add_argument(
+    full_precision_group.add_argument(
         "--full-precision-mm-ffn-down",
         action="store_true",
         help="Force full-precision matmul for FFN down projections (ffn.2) (WAN models)",
     )
 
-    parser.add_argument(
+    precision_group = parser.add_argument_group("Precision / backend")
+    precision_group.add_argument(
         "--use-ck-quant",
         action="store_true",
         help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
     )
-
-
-    parser.add_argument(
+    precision_group.add_argument(
         "--device",
         choices=["cuda", "cpu"],
         default="cuda",
         help="Device for conversion (default: cuda)",
     )
-
-    parser.add_argument(
+    precision_group.add_argument(
         "--dtype",
         choices=["bfloat16", "float16"],
         default="bfloat16",
         help="Output dtype for non-quantized tensors (default: bfloat16)",
     )
-
-    parser.add_argument(
+    precision_group.add_argument(
         "--quant-dtype",
         choices=["bfloat16", "float16", "float32"],
         default="bfloat16",
         help="Input dtype for quantization. Use bfloat16/float16 to match working models "
         "from HuggingFace. Use float32 for maximum precision (default: bfloat16)",
     )
-
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show detailed progress"
-    )
-
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview what would be quantized without converting",
-    )
-
-    parser.add_argument(
+    precision_group.add_argument(
+        "-F",
         "--use-fp8",
         action="store_true",
         help="Use FP8 for intermediate precision layers (Q6_K equivalent in GGUF). "
         "Creates mixed NVFP4/FP8 output for better quality with moderate size increase.",
+    )
+
+    diag_group = parser.add_argument_group("Diagnostics")
+    diag_group.add_argument(
+        "--verbose", "-v", action="store_true", help="Show detailed progress"
+    )
+    diag_group.add_argument(
+        "-n",
+        "--dry-run",
+        action="store_true",
+        help="Preview what would be quantized without converting",
     )
 
     args = parser.parse_args()
