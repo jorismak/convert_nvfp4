@@ -520,6 +520,41 @@ def _load_layer_list(path: Optional[str]) -> Set[str]:
     return layers
 
 
+def _load_sensitivity_overrides(
+    sensitivity_json: Optional[str], threshold: Optional[float]
+) -> Set[str]:
+    """
+    Load layers from a sensitivity JSON file whose rel_rmse_mean exceeds threshold.
+
+    Args:
+        sensitivity_json: Path to sensitivity.json
+        threshold: rel_rmse_mean threshold (layers > threshold will be FP16/BF16)
+
+    Returns:
+        Set of layer names to force FP16/BF16
+    """
+    if not sensitivity_json or threshold is None:
+        return set()
+
+    path = Path(sensitivity_json)
+    if not path.exists():
+        raise FileNotFoundError(f"Sensitivity JSON not found: {sensitivity_json}")
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    layers = data.get("layers", [])
+    flagged: Set[str] = set()
+    for row in layers:
+        try:
+            layer = row.get("layer")
+            value = float(row.get("rel_rmse_mean"))
+        except Exception:
+            continue
+        if layer and value > threshold:
+            flagged.add(layer)
+
+    return flagged
+
+
 def _load_state_dict_for_calibration(model_path: str) -> Dict[str, torch.Tensor]:
     path = Path(model_path)
     input_type, base_path, index_data = detect_input_type(path)
@@ -1574,6 +1609,8 @@ def convert_to_nvfp4(
     input_scale_summary_std_threshold: Optional[float] = None,
     input_scale_summary_cv_threshold: Optional[float] = 0.4,
     input_scale_layer_summary: bool = False,
+    sensitivity_json: Optional[str] = None,
+    sensitivity_threshold: Optional[float] = None,
     full_precision_mm: bool = False,
     full_precision_mm_layers: Optional[Set[str]] = None,
     full_precision_mm_patterns: Optional[List[str]] = None,
@@ -1667,6 +1704,8 @@ def convert_to_nvfp4(
         raise ValueError("--input-scale-summary-std-threshold must be > 0")
     if input_scale_summary_cv_threshold is not None and input_scale_summary_cv_threshold <= 0:
         raise ValueError("--input-scale-summary-cv-threshold must be > 0")
+    if sensitivity_threshold is not None and sensitivity_threshold <= 0:
+        raise ValueError("--sensitivity-threshold must be > 0")
 
     input_scale_map: Dict[str, torch.Tensor] = {}
     input_scale_source: Dict[str, str] = {}
@@ -1814,6 +1853,23 @@ def convert_to_nvfp4(
             fp8_layers -= ffn2_layers
             skip_layers |= ffn2_layers
             print(f"FFN.2 override: moved {len(ffn2_layers)} layers to FP16/BF16")
+
+    # Sensitivity-based FP16 override (from sensitivity.json)
+    if sensitivity_json and sensitivity_threshold is not None:
+        flagged_layers = _load_sensitivity_overrides(
+            sensitivity_json, sensitivity_threshold
+        )
+        if flagged_layers:
+            moved_nvfp4 = flagged_layers & quantize_layers
+            moved_fp8 = flagged_layers & fp8_layers
+            quantize_layers -= moved_nvfp4
+            fp8_layers -= moved_fp8
+            skip_layers |= (moved_nvfp4 | moved_fp8)
+            print(
+                "Sensitivity override: "
+                f"flagged={len(flagged_layers)}, moved_nvfp4={len(moved_nvfp4)}, "
+                f"moved_fp8={len(moved_fp8)} (threshold={sensitivity_threshold})"
+            )
 
     if min_ffn_fp8:
         still_nvfp4_ffn = {l for l in quantize_layers if re.search(r"\.ffn\.(0|2)\b", l)}
@@ -2340,6 +2396,9 @@ def convert_to_nvfp4(
         output_metadata["nvfp4_input_scale_summary_multiplier"] = str(
             input_scale_summary_multiplier
         )
+    if sensitivity_json and sensitivity_threshold is not None:
+        output_metadata["nvfp4_sensitivity_json"] = str(sensitivity_json)
+        output_metadata["nvfp4_sensitivity_threshold"] = str(sensitivity_threshold)
     if full_precision_mm:
         output_metadata["nvfp4_full_precision_mm"] = "true"
     elif selected_full_precision_layers:
@@ -2657,6 +2716,20 @@ Supported models:
     )
 
     parser.add_argument(
+        "--sensitivity-json",
+        default=None,
+        metavar="PATH",
+        help="Path to sensitivity.json (rel_rmse_mean stats) for FP16 overrides",
+    )
+
+    parser.add_argument(
+        "--sensitivity-threshold",
+        type=float,
+        default=None,
+        help="rel_rmse_mean threshold; layers above this stay FP16/BF16",
+    )
+
+    parser.add_argument(
         "--full-precision-mm",
         action="store_true",
         help="Force full-precision matmul for quantized layers (diagnostic)",
@@ -2782,6 +2855,8 @@ Supported models:
             input_scale_summary_std_threshold=args.input_scale_summary_std_threshold,
             input_scale_summary_cv_threshold=args.input_scale_summary_cv_threshold,
             input_scale_layer_summary=args.input_scale_layer_summary,
+            sensitivity_json=args.sensitivity_json,
+            sensitivity_threshold=args.sensitivity_threshold,
             full_precision_mm=args.full_precision_mm,
             full_precision_mm_layers=_load_layer_list(args.full_precision_mm_layers),
             full_precision_mm_patterns=args.full_precision_mm_pattern,
