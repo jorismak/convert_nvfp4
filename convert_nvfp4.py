@@ -35,6 +35,9 @@ Input scale sources (priority order):
     4) --input-scale-value (fixed value for all layers)
     5) fallback heuristic (if none of the above are provided)
 
+Input-scale calibration:
+    Currently supported model: WAN2.2-TI2V-5B
+
 Dynamic scaling:
     --no-input-scale uses ComfyUI dynamic scaling. This is required for ComfyUI
     calibration passes, but is unstable for inference quality.
@@ -2462,39 +2465,41 @@ Supported models:
         action="store_true",
         help="Print per-layer input_scale values after conversion",
     )
-    input_scale_group.add_argument(
+
+    calib_group = parser.add_argument_group("Input-scale calibration")
+    calib_group.add_argument(
         "--calibrate-from-fp16",
         dest="calibrate_from_fp16",
         default=None,
         metavar="PATH",
         help="Measure activation ranges from a FP16/FP32 WAN model and use them as input_scale",
     )
-    input_scale_group.add_argument(
+    calib_group.add_argument(
         "--input-scale-from-fp16",
         dest="calibrate_from_fp16",
         metavar="PATH",
         help=argparse.SUPPRESS,
     )
-    input_scale_group.add_argument(
+    calib_group.add_argument(
         "--input-scale-method",
         choices=["max", "mean", "percentile_99"],
         default="max",
         help="Aggregation method for calibration (default: max)",
     )
-    input_scale_group.add_argument(
+    calib_group.add_argument(
         "--input-scale-samples",
         type=int,
         default=8,
         help="Number of random activation samples for calibration",
     )
-    input_scale_group.add_argument(
+    calib_group.add_argument(
         "--comfyui-root",
         default=None,
         metavar="PATH",
         help="Path to ComfyUI root for WAN model loading (optional)",
     )
 
-    summary_group = parser.add_argument_group("Input-scale summary")
+    summary_group = parser.add_argument_group("Input-scale calibration from summary file")
     summary_group.add_argument(
         "--input-scale-summary-json",
         default=None,
