@@ -78,6 +78,44 @@ def _stddev(values: List[float]) -> float:
     return math.sqrt(var)
 
 
+def _kurtosis(values: List[float]) -> float:
+    """
+    Compute excess kurtosis (Fisher) using population moments.
+
+    Returns:
+        Excess kurtosis (0 for normal), or NaN if undefined.
+    """
+    if not values:
+        return float("nan")
+    if len(values) < 2:
+        return float("nan")
+    mean = sum(values) / len(values)
+    m2 = sum((v - mean) ** 2 for v in values) / len(values)
+    if m2 == 0.0:
+        return float("nan")
+    m4 = sum((v - mean) ** 4 for v in values) / len(values)
+    return (m4 / (m2 * m2)) - 3.0
+
+
+def _outlier_frac(values: List[float], k: float = 3.0) -> float:
+    """
+    Fraction of values with |x - mean| > k * std.
+    Returns NaN if std is 0 or values are empty.
+    """
+    if not values:
+        return float("nan")
+    if len(values) < 2:
+        return float("nan")
+    mean = sum(values) / len(values)
+    var = sum((v - mean) ** 2 for v in values) / len(values)
+    std = math.sqrt(var)
+    if std == 0.0:
+        return float("nan")
+    threshold = k * std
+    count = sum(1 for v in values if abs(v - mean) > threshold)
+    return count / len(values)
+
+
 def _write_csv(path: Path, rows: List[Dict[str, object]], fields: List[str]) -> None:
     lines = [",".join(fields)]
     for row in rows:
@@ -168,6 +206,8 @@ def main() -> None:
             "scale_max": scales_sorted[-1],
             "scale_mean": sum(scales_sorted) / len(scales_sorted),
             "scale_std": _stddev(scales_sorted),
+            "scale_kurtosis": _kurtosis(scales_sorted),
+            "scale_outlier_frac_3std": _outlier_frac(scales_sorted, 3.0),
         }
         for pct in args.percentiles:
             row[f"scale_p{pct}"] = _percentile(scales_sorted, pct)
@@ -179,6 +219,8 @@ def main() -> None:
                     "amax_max": amax_sorted[-1],
                     "amax_mean": sum(amax_sorted) / len(amax_sorted),
                     "amax_std": _stddev(amax_sorted),
+                    "amax_kurtosis": _kurtosis(amax_sorted),
+                    "amax_outlier_frac_3std": _outlier_frac(amax_sorted, 3.0),
                 }
             )
             for pct in args.percentiles:
@@ -194,6 +236,8 @@ def main() -> None:
         "scale_max",
         "scale_mean",
         "scale_std",
+        "scale_kurtosis",
+        "scale_outlier_frac_3std",
     ] + [f"scale_p{p}" for p in args.percentiles]
 
     if rows and "amax_min" in rows[0]:
@@ -202,6 +246,8 @@ def main() -> None:
             "amax_max",
             "amax_mean",
             "amax_std",
+            "amax_kurtosis",
+            "amax_outlier_frac_3std",
         ] + [f"amax_p{p}" for p in args.percentiles]
 
     if args.csv:
