@@ -2205,10 +2205,45 @@ def convert_to_nvfp4(
 # =============================================================================
 
 
+class NVFP4HelpFormatter(argparse.RawDescriptionHelpFormatter):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("max_help_position", 40)
+        kwargs.setdefault("indent_increment", 2)
+        super().__init__(*args, **kwargs)
+
+    def _format_action_invocation(self, action):
+        if not action.option_strings:
+            return super()._format_action_invocation(action)
+
+        longs = [s for s in action.option_strings if s.startswith("--")]
+        shorts = [s for s in action.option_strings if s.startswith("-") and not s.startswith("--")]
+
+        parts = []
+        if longs:
+            parts.append(", ".join(longs))
+        if shorts:
+            parts.append(", ".join(shorts))
+
+        option_str = ", ".join(parts) if parts else ", ".join(action.option_strings)
+
+        if action.nargs != 0:
+            default = self._get_default_metavar_for_optional(action)
+            args_string = self._format_args(action, default)
+            return f"{option_str} {args_string}"
+
+        return option_str
+
+
+class NVFP4ArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_help(sys.stderr)
+        self.exit(2, f"\nError: {message}\n")
+
+
 def main():
-    parser = argparse.ArgumentParser(
+    parser = NVFP4ArgumentParser(
         description="Convert safetensors models to NVFP4 quantization for ComfyUI",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=NVFP4HelpFormatter,
         epilog="""
 Examples:
   # Convert single safetensors file
@@ -2295,61 +2330,97 @@ Supported models:
         """,
     )
 
-    parser.add_argument(
-        "input", help="Input safetensors file, index.json, or directory with shards"
+    general_group = parser.add_argument_group("General")
+    general_group.add_argument(
+        "input",
+        metavar="INPUT",
+        help="Input safetensors file, index.json, or directory with shards",
     )
-    parser.add_argument(
-        "output", help="Output safetensors file (single consolidated file)"
+    general_group.add_argument(
+        "output",
+        metavar="OUTPUT",
+        help="Output safetensors file (single consolidated file)",
+    )
+    general_group.add_argument(
+        "--use-ck-quant",
+        action="store_true",
+        help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
+    )
+    general_group.add_argument(
+        "--device",
+        choices=["cuda", "cpu"],
+        default="cuda",
+        help="Device for conversion (default: cuda)",
+    )
+    general_group.add_argument(
+        "--dtype",
+        choices=["bfloat16", "float16"],
+        default="bfloat16",
+        help="Output dtype for non-quantized tensors (default: bfloat16)",
+    )
+    general_group.add_argument(
+        "--quant-dtype",
+        choices=["bfloat16", "float16", "float32"],
+        default="bfloat16",
+        help="Input dtype for quantization. Use bfloat16/float16 to match working models "
+        "from HuggingFace. Use float32 for maximum precision (default: bfloat16)",
     )
 
-    selection_group = parser.add_argument_group("Layer selection")
-    selection_group.add_argument(
-        "-m",
+    quality_group = parser.add_argument_group("Quality")
+    quality_group.add_argument(
         "--mode",
+        "-m",
         choices=["all", "safe"],
         default="all",
         help="Quantization mode: 'all' quantizes all Linear layers, 'safe' skips sensitive layers (default: all)",
     )
-    selection_group.add_argument(
-        "-p",
+    quality_group.add_argument(
         "--preset",
+        "-p",
         choices=list(PRESETS.keys()),
         default=None,
         metavar="NAME",
         help="Use a model-specific preset (e.g., 'wan' for Wan 2.1/2.2 models). "
         "Presets configure optimal skip patterns for specific architectures.",
     )
-    selection_group.add_argument(
+    quality_group.add_argument(
         "--min-ffn-fp8",
         action="store_true",
         help="Force FFN up/down projections (ffn.0/ffn.2) to be at least FP8",
     )
-    selection_group.add_argument(
+    quality_group.add_argument(
         "--min-ffn2-fp16",
         action="store_true",
         help="Force FFN down projections (ffn.2) to FP16/BF16",
     )
-    selection_group.add_argument(
-        "-x",
+    quality_group.add_argument(
         "--exclude",
+        "-x",
         action="append",
         default=[],
         metavar="PATTERN",
         help="Regex pattern for layers to skip (repeatable)",
     )
-    selection_group.add_argument(
-        "-i",
+    quality_group.add_argument(
         "--include",
+        "-i",
         action="append",
         default=[],
         metavar="PATTERN",
         help="Regex pattern to force include layers (overrides --mode safe; repeatable)",
     )
+    quality_group.add_argument(
+        "--use-fp8",
+        "-F",
+        action="store_true",
+        help="Use FP8 for intermediate precision layers (Q6_K equivalent in GGUF). "
+        "Creates mixed NVFP4/FP8 output for better quality with moderate size increase.",
+    )
 
-    gguf_group = parser.add_argument_group("GGUF mapping")
+    gguf_group = parser.add_argument_group("GGUF parsing")
     gguf_group.add_argument(
-        "-g",
         "--gguf",
+        "-g",
         default=None,
         metavar="PATH",
         help="Path to GGUF file for precision mapping (F32/F16/Qn -> FP32/FP16/NVFP4/FP8)",
@@ -2366,7 +2437,7 @@ Supported models:
         help="Keep first two and last two blocks at FP16/BF16 in GGUF mode",
     )
 
-    input_scale_group = parser.add_argument_group("Input scale sources")
+    input_scale_group = parser.add_argument_group("Input-scale")
     input_scale_group.add_argument(
         "--no-input-scale",
         action="store_true",
@@ -2390,41 +2461,39 @@ Supported models:
         action="store_true",
         help="Print per-layer input_scale values after conversion",
     )
-
-    calib_group = parser.add_argument_group("Input scale calibration (WAN)")
-    calib_group.add_argument(
+    input_scale_group.add_argument(
         "--calibrate-from-fp16",
         dest="calibrate_from_fp16",
         default=None,
         metavar="PATH",
         help="Measure activation ranges from a FP16/FP32 WAN model and use them as input_scale",
     )
-    calib_group.add_argument(
+    input_scale_group.add_argument(
         "--input-scale-from-fp16",
         dest="calibrate_from_fp16",
         metavar="PATH",
         help=argparse.SUPPRESS,
     )
-    calib_group.add_argument(
+    input_scale_group.add_argument(
         "--input-scale-method",
         choices=["max", "mean", "percentile_99"],
         default="max",
         help="Aggregation method for calibration (default: max)",
     )
-    calib_group.add_argument(
+    input_scale_group.add_argument(
         "--input-scale-samples",
         type=int,
         default=8,
         help="Number of random activation samples for calibration",
     )
-    calib_group.add_argument(
+    input_scale_group.add_argument(
         "--comfyui-root",
         default=None,
         metavar="PATH",
         help="Path to ComfyUI root for WAN model loading (optional)",
     )
 
-    summary_group = parser.add_argument_group("Input scale summary (analyze_input_scale_log.py)")
+    summary_group = parser.add_argument_group("Input-scale summary")
     summary_group.add_argument(
         "--input-scale-summary-json",
         default=None,
@@ -2461,7 +2530,7 @@ Supported models:
         help="Relative std/mean (CV) threshold for FP16/BF16 selection (default: 0.4)",
     )
 
-    sensitivity_group = parser.add_argument_group("Sensitivity overrides")
+    sensitivity_group = parser.add_argument_group("Sensitivity")
     sensitivity_group.add_argument(
         "--sensitivity-json",
         default=None,
@@ -2481,7 +2550,7 @@ Supported models:
         help="Action for sensitivity layers: move to FP16/BF16 or mark full-precision matmul",
     )
 
-    full_precision_group = parser.add_argument_group("Full-precision matmul (diagnostic)")
+    full_precision_group = parser.add_argument_group("Full-precision-mm")
     full_precision_group.add_argument(
         "--full-precision-mm",
         action="store_true",
@@ -2526,49 +2595,23 @@ Supported models:
         help="Force full-precision matmul for FFN down projections (ffn.2) (WAN models)",
     )
 
-    precision_group = parser.add_argument_group("Precision / backend")
-    precision_group.add_argument(
-        "--use-ck-quant",
+    debug_group = parser.add_argument_group("Debug")
+    debug_group.add_argument(
+        "--verbose",
+        "-v",
         action="store_true",
-        help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
+        help="Show detailed progress",
     )
-    precision_group.add_argument(
-        "--device",
-        choices=["cuda", "cpu"],
-        default="cuda",
-        help="Device for conversion (default: cuda)",
-    )
-    precision_group.add_argument(
-        "--dtype",
-        choices=["bfloat16", "float16"],
-        default="bfloat16",
-        help="Output dtype for non-quantized tensors (default: bfloat16)",
-    )
-    precision_group.add_argument(
-        "--quant-dtype",
-        choices=["bfloat16", "float16", "float32"],
-        default="bfloat16",
-        help="Input dtype for quantization. Use bfloat16/float16 to match working models "
-        "from HuggingFace. Use float32 for maximum precision (default: bfloat16)",
-    )
-    precision_group.add_argument(
-        "-F",
-        "--use-fp8",
+    debug_group.add_argument(
+        "--dry-run",
+        "-n",
         action="store_true",
-        help="Use FP8 for intermediate precision layers (Q6_K equivalent in GGUF). "
-        "Creates mixed NVFP4/FP8 output for better quality with moderate size increase.",
+        help="Dry run (no output written)",
     )
 
-    diag_group = parser.add_argument_group("Diagnostics")
-    diag_group.add_argument(
-        "--verbose", "-v", action="store_true", help="Show detailed progress"
-    )
-    diag_group.add_argument(
-        "-n",
-        "--dry-run",
-        action="store_true",
-        help="Preview what would be quantized without converting",
-    )
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(0)
 
     args = parser.parse_args()
 
