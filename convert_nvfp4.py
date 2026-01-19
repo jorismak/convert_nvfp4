@@ -2402,7 +2402,8 @@ Supported models:
         action="append",
         default=[],
         metavar="PATTERN",
-        help="Regex pattern for layers to skip (repeatable)",
+        help="Regex pattern for layers to keep FP16/BF16 (repeatable, case-insensitive). "
+        "Pattern is matched with re.search(). Ignored when --gguf is used.",
     )
     quality_group.add_argument(
         "--include",
@@ -2410,7 +2411,8 @@ Supported models:
         action="append",
         default=[],
         metavar="PATTERN",
-        help="Regex pattern to force include layers (overrides --mode safe; repeatable)",
+        help="Regex pattern to force NVFP4 quantization (overrides --mode safe; repeatable, "
+        "case-insensitive). Pattern is matched with re.search(). Ignored when --gguf is used.",
     )
     quality_group.add_argument(
         "--use-fp8",
