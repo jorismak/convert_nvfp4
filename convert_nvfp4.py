@@ -2414,7 +2414,8 @@ Supported models:
         "-F",
         action="store_true",
         help="Use FP8 for intermediate precision layers (Q6_K equivalent in GGUF). "
-        "Creates mixed NVFP4/FP8 output for better quality with moderate size increase.",
+        "Creates mixed NVFP4/FP8 output for better quality with moderate size increase. "
+        "If omitted, FP16/BF16 is used instead of FP8.",
     )
 
     gguf_group = parser.add_argument_group("GGUF parsing")
