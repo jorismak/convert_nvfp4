@@ -209,11 +209,16 @@ def _compute_input_scale_from_tensor(x: torch.Tensor) -> float:
     return max(amax / (F8_E4M3_MAX * F4_E2M1_MAX), 1e-12)
 
 
+def _pct_key(pct: float) -> str:
+    pct_str = str(pct).rstrip("0").rstrip(".")
+    return pct_str.replace(".", "_")
+
+
 def _load_summary_scales(
-    path: str, percentile: int, multiplier: float
+    path: str, percentile: float, multiplier: float
 ) -> Dict[str, float]:
     summary = json.loads(Path(path).read_text(encoding="utf-8"))
-    key = f"scale_p{percentile}"
+    key = f"scale_p{_pct_key(percentile)}"
     out: Dict[str, float] = {}
     for row in summary.get("layers", []):
         layer = row.get("layer")
@@ -278,9 +283,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--input-scale-summary-percentile",
-        type=int,
-        default=99,
-        help="Percentile to use from summary JSON (default: 99)",
+        type=float,
+        default=99.0,
+        help="Percentile to use from summary JSON (default: 99; supports 99.9)",
     )
     parser.add_argument(
         "--input-scale-summary-multiplier",
