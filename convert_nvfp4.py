@@ -31,12 +31,12 @@ Quick start:
 Input scale sources (priority order):
     1) --input-scale-from (exact per-layer values from a reference NVFP4 model)
     2) --input-scale-summary-json (per-layer stats from analyze_input_scale_log.py)
-    3) --calibrate-from-fp16 (WAN activation calibration)
+    3) --calibrate-from-fp16 (activation calibration with explicit --model-type)
     4) --input-scale-value (fixed value for all layers)
     5) fallback heuristic (if none of the above are provided)
 
 Input-scale calibration:
-    Currently supported model: WAN2.2-TI2V-5B
+    Requires --model-type and a FP16/FP32 safetensors file.
 
 Dynamic scaling:
     --no-input-scale uses ComfyUI dynamic scaling. This is required for ComfyUI
@@ -56,9 +56,10 @@ Common options:
             --input-scale-summary-percentile 99 \
             --input-scale-summary-multiplier 1.05
 
-    # Calibrate input_scale from FP16/FP32 WAN model activations
+        # Calibrate input_scale from FP16/FP32 model activations
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors \
-            --calibrate-from-fp16 wan_fp16.safetensors
+            --calibrate-from-fp16 wan_fp16.safetensors \
+            --model-type wan22_5b
 
     # Full-precision matmul (diagnostic)
     python convert_nvfp4.py model.safetensors model_nvfp4.safetensors --full-precision-mm
@@ -75,7 +76,7 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import save_file
 from tqdm import tqdm
-from nvfp4_calibration import compute_input_scales_from_fp16_state_dict
+from nvfp4_calibration import MODEL_TYPES, compute_input_scales_from_fp16_state_dict
 
 # =============================================================================
 # Constants
@@ -1334,6 +1335,7 @@ def convert_to_nvfp4(
     input_scale_value: Optional[float] = None,
     input_scale_from: Optional[str] = None,
     calibrate_from_fp16: Optional[str] = None,
+    model_type: Optional[str] = None,
     input_scale_method: str = "max",
     input_scale_samples: int = 8,
     comfyui_root: Optional[str] = None,
@@ -1385,7 +1387,8 @@ def convert_to_nvfp4(
         add_input_scale: Whether to write input_scale tensors for NVFP4 layers
         input_scale_value: Fixed input_scale value for activations (if not calibrating)
         input_scale_from: Optional NVFP4 safetensors file to copy input_scale values
-        calibrate_from_fp16: Optional FP16/FP32 WAN model to measure activations
+        calibrate_from_fp16: Optional FP16/FP32 model to measure activations
+        model_type: Explicit model type for calibration
         input_scale_method: Method for input_scale aggregation (max/mean/percentile_99)
         input_scale_samples: Number of activation samples to run
         comfyui_root: Optional ComfyUI root path for WAN model loading
@@ -1441,6 +1444,8 @@ def convert_to_nvfp4(
         print("Warning: --calibrate-from-fp16 ignored because --no-input-scale was set.")
     if input_scale_summary_json and not add_input_scale:
         print("Warning: --input-scale-summary-json ignored because --no-input-scale was set.")
+    if calibrate_from_fp16 and not model_type:
+        raise ValueError("--model-type is required when using --calibrate-from-fp16")
     if input_scale_summary_multiplier <= 0:
         raise ValueError("--input-scale-summary-multiplier must be > 0")
     if input_scale_summary_std_threshold is not None and input_scale_summary_std_threshold <= 0:
@@ -1713,6 +1718,7 @@ def convert_to_nvfp4(
             input_scale_samples,
             device,
             comfyui_root,
+            model_type or "",
         )
 
     if add_input_scale and input_scale_summary_json:
@@ -2176,6 +2182,8 @@ def convert_to_nvfp4(
         output_metadata["nvfp4_calibrate_from_fp16"] = str(calibrate_from_fp16)
         output_metadata["nvfp4_input_scale_method"] = str(input_scale_method)
         output_metadata["nvfp4_input_scale_samples"] = str(input_scale_samples)
+        if model_type:
+            output_metadata["nvfp4_calibration_model_type"] = str(model_type)
     if input_scale_summary_json:
         output_metadata["nvfp4_input_scale_summary_json"] = str(input_scale_summary_json)
         output_metadata["nvfp4_input_scale_summary_percentile"] = str(
@@ -2356,7 +2364,7 @@ Presets:
 Input scale sources (priority order):
     1) --input-scale-from (exact per-layer values from a reference NVFP4 model)
     2) --input-scale-summary-json (per-layer stats from analyze_input_scale_log.py)
-    3) --calibrate-from-fp16 (WAN activation calibration)
+    3) --calibrate-from-fp16 (activation calibration with explicit --model-type)
     4) --input-scale-value (fixed value for all layers)
     5) fallback heuristic (if none of the above are provided)
 
@@ -2521,7 +2529,17 @@ Supported models:
         dest="calibrate_from_fp16",
         default=None,
         metavar="PATH",
-        help="Measure activation ranges from a FP16/FP32 WAN model and use them as input_scale",
+        help="Measure activation ranges from a FP16/FP32 model and use them as input_scale",
+    )
+    calib_group.add_argument(
+        "--model-type",
+        dest="model_type",
+        default=None,
+        choices=MODEL_TYPES,
+        help=(
+            "Explicit model type for --calibrate-from-fp16. "
+            "Required when calibration is enabled."
+        ),
     )
     calib_group.add_argument(
         "--input-scale-from-fp16",
@@ -2545,7 +2563,7 @@ Supported models:
         "--comfyui-root",
         default=None,
         metavar="PATH",
-        help="Path to ComfyUI root for WAN model loading (optional)",
+        help="Path to ComfyUI root for model loading (optional)",
     )
 
     summary_group = parser.add_argument_group("Input-scale calibration from summary file")
@@ -2682,6 +2700,9 @@ Supported models:
 
     args = parser.parse_args()
 
+    if args.calibrate_from_fp16 and not args.model_type:
+        parser.error("--model-type is required when using --calibrate-from-fp16")
+
     try:
         convert_to_nvfp4(
             input_path=args.input,
@@ -2699,6 +2720,7 @@ Supported models:
             input_scale_value=args.input_scale_value,
             input_scale_from=args.input_scale_from,
             calibrate_from_fp16=args.calibrate_from_fp16,
+            model_type=args.model_type,
             input_scale_method=args.input_scale_method,
             input_scale_samples=args.input_scale_samples,
             comfyui_root=args.comfyui_root,

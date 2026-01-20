@@ -2,13 +2,14 @@
 """
 Analyze input precision sensitivity for NVFP4 layers.
 
-Runs a FP16/FP32 WAN model forward pass and estimates how much
+Runs a FP16/FP32 model forward pass and estimates how much
 input quantization (FP4 with NVFP4-style scaling) would distort
 the activations per Linear layer. Produces a ranked list of layers
 most sensitive to input precision.
 
 Usage:
   python analyze_input_precision_sensitivity.py \
+    --model-type wan22_5b \
       --fp16-model D:\\ComfyUI\\ComfyUI\\models\\diffusion_models\\wan2.2_ti2v_5B_fp16.safetensors \
       --samples 6 \
       --input-scale-summary-json nvfp4_scales_summary.json \
@@ -32,6 +33,16 @@ except Exception:  # pragma: no cover - optional dependency
     plt = None
 
 import torch
+
+from nvfp4_calibration import (
+    MODEL_TYPES,
+    QWEN_MODEL_TYPES,
+    WAN_MODEL_TYPES,
+    build_qwen_model_for_calibration,
+    build_wan_model_for_calibration,
+    run_qwen_calibration_passes,
+    run_wan_calibration_passes,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent
 CK_PATH = REPO_ROOT / "comfy-kitchen"
@@ -73,93 +84,23 @@ def _load_state_dict_for_calibration(model_path: str) -> Dict[str, torch.Tensor]
     return torch.load(path, map_location="cpu")
 
 
-def _build_wan_model_for_calibration(
-    model_path: str, device: str, comfyui_root: Optional[str]
-):
-    root = _resolve_comfyui_root(comfyui_root)
-    sys.path.insert(0, str(root))
-
-    from comfy.ldm.wan.model import WanModel
-    import comfy.ops as ops
-
-    state_dict = _load_state_dict_for_calibration(model_path)
-
-    hidden_size = state_dict["blocks.0.self_attn.q.weight"].shape[0]
-    num_blocks = (
-        max(int(k.split(".")[1]) for k in state_dict.keys() if k.startswith("blocks."))
-        + 1
-    )
-    text_dim = state_dict["text_embedding.0.weight"].shape[1]
-    ffn_dim = state_dict["blocks.0.ffn.0.weight"].shape[0]
-    in_dim = state_dict["patch_embedding.weight"].shape[1]
-    head_out = state_dict["head.head.weight"].shape[0]
-    out_dim = head_out // 4
-
-    model = WanModel(
-        model_type="t2v",
-        patch_size=(1, 2, 2),
-        in_dim=in_dim,
-        dim=hidden_size,
-        ffn_dim=ffn_dim,
-        text_dim=text_dim,
-        out_dim=out_dim,
-        num_heads=hidden_size // 128,
-        num_layers=num_blocks,
-        dtype=torch.bfloat16,
-        device="cpu",
-        operations=ops.manual_cast,
-    )
-
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    if missing:
-        print(f"  Missing keys during calibration load: {len(missing)}")
-    if unexpected:
-        print(f"  Unexpected keys during calibration load: {len(unexpected)}")
-
-    model = model.to(device=device)
-    model.eval()
-    return model
-
-
-def _run_wan_calibration_passes(
-    model,
-    in_dim: int,
-    num_samples: int,
+def _build_model_for_calibration(
+    model_path: str,
+    model_type: str,
     device: str,
-    batch_size: int = 1,
+    comfyui_root: Optional[str],
 ):
-    text_dim = model.text_dim
-    text_len = 512
-
-    latent_channels = in_dim
-    latent_t = 5
-    latent_h = 30
-    latent_w = 52
-
-    for i in range(num_samples):
-        x = torch.randn(
-            batch_size,
-            latent_channels,
-            latent_t,
-            latent_h,
-            latent_w,
-            device=device,
-            dtype=torch.bfloat16,
+    state_dict = _load_state_dict_for_calibration(model_path)
+    if model_type in WAN_MODEL_TYPES:
+        model = build_wan_model_for_calibration(
+            state_dict, device, comfyui_root, model_type
         )
-        timestep = torch.randint(0, 1000, (batch_size,), device=device, dtype=torch.long)
-        context = torch.randn(
-            batch_size, text_len, text_dim, device=device, dtype=torch.bfloat16
+    else:
+        model = build_qwen_model_for_calibration(
+            state_dict, device, comfyui_root, model_type
         )
 
-        with torch.no_grad():
-            try:
-                _ = model(x, timestep, context)
-            except Exception as exc:
-                print(f"Calibration forward error: {exc}")
-                break
-
-        if i % 2 == 0 and device == "cuda":
-            torch.cuda.empty_cache()
+    return model
 
 
 def _to_float8_e4m3(t: torch.Tensor) -> torch.Tensor:
@@ -274,7 +215,17 @@ def _plot_histogram(values: List[float], title: str, out_path: Path, bins: int) 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze input precision sensitivity")
-    parser.add_argument("--fp16-model", required=True, help="Path to FP16/FP32 WAN model")
+    parser.add_argument(
+        "--model-type",
+        required=True,
+        choices=MODEL_TYPES,
+        help="Model type for calibration (required)",
+    )
+    parser.add_argument(
+        "--fp16-model",
+        required=True,
+        help="Path to FP16/FP32 model safetensors",
+    )
     parser.add_argument(
         "--input-scale-summary-json",
         default=None,
@@ -309,7 +260,7 @@ def main() -> None:
         "--comfyui-root",
         default=None,
         metavar="PATH",
-        help="Path to ComfyUI root for WAN model loading (optional)",
+        help="Path to ComfyUI root for model loading (optional)",
     )
     parser.add_argument(
         "--output-json",
@@ -359,7 +310,9 @@ def main() -> None:
                 f"max={max(vals):.6f}, mean={(sum(vals)/len(vals)):.6f}"
             )
 
-    model = _build_wan_model_for_calibration(args.fp16_model, args.device, args.comfyui_root)
+    model = _build_model_for_calibration(
+        args.fp16_model, args.model_type, args.device, args.comfyui_root
+    )
 
     import torch.nn as nn
 
@@ -412,8 +365,11 @@ def main() -> None:
 
     print(f"Registered {len(hooks)} activation hooks")
 
-    in_dim = model.patch_embedding.weight.shape[1]
-    _run_wan_calibration_passes(model, in_dim, args.samples, args.device)
+    if args.model_type in WAN_MODEL_TYPES:
+        in_dim = model.patch_embedding.weight.shape[1]
+        run_wan_calibration_passes(model, in_dim, args.samples, args.device)
+    else:
+        run_qwen_calibration_passes(model, args.samples, args.device)
 
     for h in hooks:
         h.remove()
@@ -437,6 +393,7 @@ def main() -> None:
     rows.sort(key=lambda r: r["rel_rmse_mean"], reverse=True)
     out_json = {
         "model": args.fp16_model,
+        "model_type": args.model_type,
         "samples": args.samples,
         "layers": rows,
     }
