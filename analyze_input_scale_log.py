@@ -34,6 +34,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+try:
+    import matplotlib.pyplot as plt
+except Exception:  # pragma: no cover - optional dependency
+    plt = None
+
 
 def _parse_percentiles(value: str) -> List[float]:
     parts = [p.strip() for p in value.split(",") if p.strip()]
@@ -135,6 +140,37 @@ def _write_csv(path: Path, rows: List[Dict[str, object]], fields: List[str]) -> 
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _plot_histogram(values: List[float], title: str, out_path: Path, bins: int) -> None:
+    if plt is None:
+        print(f"Warning: matplotlib not available; skipping plot: {out_path}")
+        return
+    if not values:
+        print(f"Warning: no values for plot: {out_path}")
+        return
+
+    vmin = min(values)
+    vmax = max(values)
+    if vmin == vmax:
+        # Create a tiny range so we can show 20 ticks
+        vmin -= 1e-6
+        vmax += 1e-6
+
+    tick_count = 20
+    step = (vmax - vmin) / (tick_count - 1)
+    ticks = [vmin + i * step for i in range(tick_count)]
+
+    plt.figure(figsize=(10, 5))
+    plt.hist(values, bins=bins, color="#4c78a8", alpha=0.85)
+    plt.title(title)
+    plt.xlabel(title)
+    plt.ylabel("Count")
+    plt.xticks(ticks, rotation=45, ha="right")
+    plt.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize input_scale logs")
     parser.add_argument("--input", required=True, help="Path to nvfp4_scales.txt")
@@ -174,6 +210,11 @@ def main() -> None:
         type=float,
         default=99.9,
         help="Percentile to compute per step (default: 99.9)",
+    )
+    parser.add_argument(
+        "--plots-dir",
+        default="images",
+        help="Output directory for histogram plots (default: images)",
     )
     args = parser.parse_args()
 
@@ -284,6 +325,46 @@ def main() -> None:
         "layers": rows,
     }
     Path(args.json).write_text(json.dumps(json_out, indent=2), encoding="utf-8")
+
+    # Histograms
+    if rows:
+        bins = len(rows)
+        plots_dir = Path(args.plots_dir)
+        scale_cv_values: List[float] = []
+        kurtosis_values: List[float] = []
+        outlier_values: List[float] = []
+        for row in rows:
+            mean = float(row.get("scale_mean", float("nan")))
+            std = float(row.get("scale_std", float("nan")))
+            if mean != 0 and math.isfinite(mean) and math.isfinite(std):
+                scale_cv_values.append(std / mean)
+
+            kurt = row.get("scale_kurtosis")
+            if isinstance(kurt, (int, float)) and math.isfinite(kurt):
+                kurtosis_values.append(float(kurt))
+
+            outlier = row.get("scale_outlier_frac_3std")
+            if isinstance(outlier, (int, float)) and math.isfinite(outlier):
+                outlier_values.append(float(outlier))
+
+        _plot_histogram(
+            scale_cv_values,
+            "scale_cv",
+            plots_dir / f"scale_cv_hist_{bins}.png",
+            bins,
+        )
+        _plot_histogram(
+            outlier_values,
+            "outlier_frac_3std",
+            plots_dir / f"outlier_frac_3std_hist_{bins}.png",
+            bins,
+        )
+        _plot_histogram(
+            kurtosis_values,
+            "kurtosis",
+            plots_dir / f"kurtosis_hist_{bins}.png",
+            bins,
+        )
 
     if args.csv:
         print(f"Wrote CSV: {args.csv}")

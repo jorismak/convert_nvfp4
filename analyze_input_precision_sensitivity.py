@@ -26,6 +26,11 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+try:
+    import matplotlib.pyplot as plt
+except Exception:  # pragma: no cover - optional dependency
+    plt = None
+
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -232,6 +237,36 @@ def _safe_div(a: float, b: float) -> float:
     return a / b
 
 
+def _plot_histogram(values: List[float], title: str, out_path: Path, bins: int) -> None:
+    if plt is None:
+        print(f"Warning: matplotlib not available; skipping plot: {out_path}")
+        return
+    if not values:
+        print(f"Warning: no values for plot: {out_path}")
+        return
+
+    vmin = min(values)
+    vmax = max(values)
+    if vmin == vmax:
+        vmin -= 1e-6
+        vmax += 1e-6
+
+    tick_count = 20
+    step = (vmax - vmin) / (tick_count - 1)
+    ticks = [vmin + i * step for i in range(tick_count)]
+
+    plt.figure(figsize=(10, 5))
+    plt.hist(values, bins=bins, color="#f58518", alpha=0.85)
+    plt.title(title)
+    plt.xlabel(title)
+    plt.ylabel("Count")
+    plt.xticks(ticks, rotation=45, ha="right")
+    plt.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze input precision sensitivity")
     parser.add_argument("--fp16-model", required=True, help="Path to FP16/FP32 WAN model")
@@ -275,6 +310,11 @@ def main() -> None:
         "--output-json",
         default="input_precision_sensitivity.json",
         help="Output JSON path (default: input_precision_sensitivity.json)",
+    )
+    parser.add_argument(
+        "--plots-dir",
+        default="images",
+        help="Output directory for histogram plots (default: images)",
     )
     parser.add_argument(
         "--output-layers",
@@ -397,6 +437,26 @@ def main() -> None:
     }
     Path(args.output_json).write_text(json.dumps(out_json, indent=2), encoding="utf-8")
     print(f"Wrote: {args.output_json}")
+
+    # Histograms
+    if rows:
+        bins = len(rows)
+        plots_dir = Path(args.plots_dir)
+        rel_rmse_values = [r["rel_rmse_mean"] for r in rows if math.isfinite(r["rel_rmse_mean"])]
+        clip_rate_values = [r["clip_rate_mean"] for r in rows if math.isfinite(r["clip_rate_mean"])]
+
+        _plot_histogram(
+            rel_rmse_values,
+            "rel_rmse_mean",
+            plots_dir / f"rel_rmse_mean_hist_{bins}.png",
+            bins,
+        )
+        _plot_histogram(
+            clip_rate_values,
+            "clip_rate_mean",
+            plots_dir / f"clip_rate_mean_hist_{bins}.png",
+            bins,
+        )
 
     if args.output_layers:
         selected: List[str] = []
