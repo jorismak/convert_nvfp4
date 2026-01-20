@@ -23,16 +23,23 @@ Usage:
       --json nvfp4_scales_summary.json \
       --percentiles 50,90,95,99,99.9 \
       --mode dynamic
+
+Compressed inputs:
+    --input can point to .gz, .xz, or .bz2 files. Compression is auto-detected
+    from the file extension (e.g., nvfp4_scales.txt.gz).
 """
 
 from __future__ import annotations
 
 import argparse
+import bz2
+import gzip
 import json
+import lzma
 import math
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, TextIO
 
 try:
     import matplotlib.pyplot as plt
@@ -126,6 +133,17 @@ def _outlier_frac(values: List[float], k: float = 3.0) -> float:
     return count / len(values)
 
 
+def _open_input_text(path: Path) -> TextIO:
+    suffixes = [s.lower() for s in path.suffixes]
+    if ".gz" in suffixes:
+        return gzip.open(path, "rt", encoding="utf-8", errors="replace")
+    if ".xz" in suffixes:
+        return lzma.open(path, "rt", encoding="utf-8", errors="replace")
+    if ".bz2" in suffixes:
+        return bz2.open(path, "rt", encoding="utf-8", errors="replace")
+    return path.open("r", encoding="utf-8", errors="replace")
+
+
 def _write_csv(path: Path, rows: List[Dict[str, object]], fields: List[str]) -> None:
     lines = [",".join(fields)]
     for row in rows:
@@ -173,7 +191,11 @@ def _plot_histogram(values: List[float], title: str, out_path: Path, bins: int) 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize input_scale logs")
-    parser.add_argument("--input", required=True, help="Path to nvfp4_scales.txt")
+    parser.add_argument(
+        "--input",
+        required=True,
+        help="Path to nvfp4_scales.txt (.gz/.xz/.bz2 supported via extension)",
+    )
     parser.add_argument("--csv", help="Output CSV path (optional)")
     parser.add_argument("--json", required=True, help="Output JSON path")
     parser.add_argument(
@@ -225,7 +247,7 @@ def main() -> None:
     scale_by_layer: Dict[str, List[float]] = defaultdict(list)
     amax_by_layer: Dict[str, List[float]] = defaultdict(list)
 
-    with input_path.open("r", encoding="utf-8") as f:
+    with _open_input_text(input_path) as f:
         for line in f:
             line = line.strip()
             if not line:
