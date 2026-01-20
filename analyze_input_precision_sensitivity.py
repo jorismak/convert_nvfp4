@@ -269,8 +269,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--plots-dir",
-        default="images",
-        help="Output directory for histogram plots (default: images)",
+        default="plots",
+        help="Output directory for histogram plots (default: plots)",
     )
     parser.add_argument(
         "--output-layers",
