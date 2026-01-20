@@ -523,11 +523,12 @@ def _gguf_bitdepth(tensor_type: str) -> Optional[int]:
 
 def classify_layers_from_gguf(
     tensor_names: List[str],
-    tensors: Dict[str, torch.Tensor],
+    tensors: Optional[Dict[str, torch.Tensor]],
     gguf_types: Dict[str, str],
     nvfp4_max_bitdepth: int,
     use_fp8: bool = False,
     verbose: bool = False,
+    tensor_shapes: Optional[Dict[str, Tuple[int, ...]]] = None,
 ) -> Tuple[Set[str], Set[str], Set[str], Dict, Set[str]]:
     """
     Classify layers using GGUF precision choices with NVFP4/FP8 mapping by bitdepth.
@@ -571,8 +572,15 @@ def classify_layers_from_gguf(
 
         ttype = gguf_types[name]
         bitdepth = _gguf_bitdepth(ttype)
-        tensor = tensors.get(name)
-        if tensor is None or tensor.dim() != 2:
+        shape = None
+        if tensors is not None:
+            tensor = tensors.get(name)
+            if tensor is not None:
+                shape = tuple(tensor.shape)
+        elif tensor_shapes is not None:
+            shape = tensor_shapes.get(name)
+
+        if shape is None or len(shape) != 2:
             non_linear.append(name)
             continue
 
@@ -619,6 +627,135 @@ def classify_layers_from_gguf(
             print(f"[GGUF] Unknown GGUF tensor types: {len(unknown_types)}")
 
     return quantize_layers, fp8_layers, skip_layers, info, fp32_keep_names
+
+
+def classify_layers_by_shape(
+    state_dict_keys: List[str],
+    tensor_shapes: Dict[str, Tuple[int, ...]],
+    mode: str = "all",
+    preset: Optional[str] = None,
+    exclude_patterns: Optional[List[str]] = None,
+    include_patterns: Optional[List[str]] = None,
+    use_fp8: bool = False,
+) -> Tuple[Set[str], Set[str], Set[str], Dict]:
+    """
+    Classify layers into quantize, fp8, and skip sets using only tensor shapes.
+
+    This avoids loading full tensors into memory.
+    """
+    exclude_patterns = list(exclude_patterns or [])
+    include_patterns = list(include_patterns or [])
+
+    info = {
+        "preset": preset,
+        "preset_skip_patterns": [],
+        "preset_fp8_patterns": [],
+        "num_layers": 0,
+        "model_type": None,
+    }
+
+    fp8_patterns: List[str] = []
+
+    if preset:
+        num_layers = detect_num_layers(state_dict_keys)
+        model_type = detect_model_type(state_dict_keys)
+        info["num_layers"] = num_layers
+        info["model_type"] = model_type
+
+        if num_layers > 0:
+            preset_skip_patterns, preset_fp8_patterns = get_preset_skip_patterns(
+                preset, num_layers
+            )
+            info["preset_skip_patterns"] = preset_skip_patterns
+            info["preset_fp8_patterns"] = preset_fp8_patterns
+            exclude_patterns = preset_skip_patterns + exclude_patterns
+            fp8_patterns = preset_fp8_patterns
+        else:
+            print(f"Warning: Could not detect number of layers for preset '{preset}'")
+
+    exclude_re = [re.compile(p, re.IGNORECASE) for p in exclude_patterns]
+    include_re = [re.compile(p, re.IGNORECASE) for p in include_patterns]
+    fp8_re = [re.compile(p, re.IGNORECASE) for p in fp8_patterns]
+
+    quantize_layers = set()
+    fp8_layers = set()
+    skip_layers = set()
+
+    for name in state_dict_keys:
+        if not name.endswith(".weight"):
+            continue
+
+        shape = tensor_shapes.get(name)
+        if shape is None:
+            continue
+
+        layer_name = name[:-7]
+
+        # Linear weight check
+        if len(shape) != 2:
+            skip_layers.add(layer_name)
+            continue
+
+        force_include = any(p.search(layer_name) for p in include_re)
+        if force_include:
+            quantize_layers.add(layer_name)
+            continue
+
+        if any(p.search(layer_name) for p in exclude_re):
+            skip_layers.add(layer_name)
+            continue
+
+        if preset == "smart":
+            if num_layers > 0 and layer_name.startswith("blocks."):
+                try:
+                    block_idx = int(layer_name.split(".")[1])
+                except Exception:
+                    block_idx = -1
+                if block_idx in {0, 1} or block_idx >= max(0, num_layers - 2):
+                    skip_layers.add(layer_name)
+                    continue
+
+            if not layer_name.startswith("blocks."):
+                skip_layers.add(layer_name)
+                continue
+
+            if ".self_attn.norm" in layer_name:
+                skip_layers.add(layer_name)
+                continue
+
+            if re.search(r"\.ffn\.2\b", layer_name):
+                skip_layers.add(layer_name)
+                continue
+
+            if re.search(r"\.v\b", layer_name):
+                skip_layers.add(layer_name)
+                continue
+
+            if shape[0] * shape[1] < SMART_MIN_PARAMS_FP16:
+                skip_layers.add(layer_name)
+                continue
+
+        if any(p.search(layer_name) for p in fp8_re):
+            if use_fp8:
+                fp8_layers.add(layer_name)
+            else:
+                skip_layers.add(layer_name)
+            continue
+
+        if mode == "safe":
+            if (
+                shape[0] < MIN_DIM_FOR_QUANTIZATION
+                or shape[1] < MIN_DIM_FOR_QUANTIZATION
+            ):
+                skip_layers.add(layer_name)
+                continue
+            if should_skip_layer_safe_mode(layer_name, shape):
+                skip_layers.add(layer_name)
+                continue
+
+        quantize_layers.add(layer_name)
+
+    return quantize_layers, fp8_layers, skip_layers, info
 
 
 # =============================================================================
@@ -783,6 +920,70 @@ def load_tensor_from_shards(
 
     with safe_open(shard_path, framework="pt", device=device) as f:
         return f.get_tensor(tensor_name)
+
+
+def _get_tensor_info_from_safe_open(f, name: str) -> Tuple[Tuple[int, ...], torch.dtype]:
+    """Get tensor shape and dtype without loading full tensor when possible."""
+    if hasattr(f, "get_slice"):
+        view = f.get_slice(name)
+        shape = getattr(view, "shape", None) or getattr(view, "get_shape", lambda: None)()
+        dtype = getattr(view, "dtype", None) or getattr(view, "get_dtype", lambda: None)()
+        if shape is None or dtype is None:
+            # Fallback to full tensor if slice API is not fully supported
+            tensor = f.get_tensor(name)
+            return tuple(tensor.shape), tensor.dtype
+        return tuple(shape), dtype
+
+    tensor = f.get_tensor(name)
+    return tuple(tensor.shape), tensor.dtype
+
+
+def get_tensor_info_from_shards(
+    base_path: Path,
+    index_data: Dict,
+    tensor_names: List[str],
+    verbose: bool = False,
+) -> Tuple[Dict[str, Tuple[int, ...]], Dict[str, torch.dtype]]:
+    """Load tensor shapes/dtypes from sharded safetensors without full data load when possible."""
+    weight_map = index_data.get("weight_map", {})
+
+    shard_to_tensors: Dict[str, List[str]] = {}
+    for name in tensor_names:
+        shard_file = weight_map.get(name)
+        if not shard_file:
+            continue
+        shard_to_tensors.setdefault(shard_file, []).append(name)
+
+    tensor_shapes: Dict[str, Tuple[int, ...]] = {}
+    tensor_dtypes: Dict[str, torch.dtype] = {}
+
+    shard_files = list(shard_to_tensors.keys())
+    iterator = tqdm(shard_files, desc="Reading tensor shapes", disable=not verbose)
+    for shard_file in iterator:
+        shard_path = base_path / shard_file
+        iterator.set_postfix({"file": shard_file})
+
+        with safe_open(shard_path, framework="pt", device="cpu") as f:
+            for name in shard_to_tensors[shard_file]:
+                shape, dtype = _get_tensor_info_from_safe_open(f, name)
+                tensor_shapes[name] = shape
+                tensor_dtypes[name] = dtype
+
+    return tensor_shapes, tensor_dtypes
+
+
+def get_tensor_info_from_file(
+    file_path: Path, tensor_names: List[str], verbose: bool = False
+) -> Tuple[Dict[str, Tuple[int, ...]], Dict[str, torch.dtype]]:
+    """Load tensor shapes/dtypes from a single safetensors file without full data load when possible."""
+    tensor_shapes: Dict[str, Tuple[int, ...]] = {}
+    tensor_dtypes: Dict[str, torch.dtype] = {}
+    with safe_open(file_path, framework="pt", device="cpu") as f:
+        for name in tqdm(tensor_names, desc="Reading tensor shapes", disable=not verbose):
+            shape, dtype = _get_tensor_info_from_safe_open(f, name)
+            tensor_shapes[name] = shape
+            tensor_dtypes[name] = dtype
+    return tensor_shapes, tensor_dtypes
 
 
 # =============================================================================
@@ -1314,6 +1515,106 @@ def classify_layers(
     return quantize_layers, fp8_layers, skip_layers, info
 
 
+def build_output_metadata(
+    metadata: Dict,
+    quantized_layer_configs: Dict,
+    mode: str,
+    quant_dtype: str,
+    stats: Dict,
+    gguf_path: Optional[str],
+    gguf_nvfp4_max_bitdepth: int,
+    input_scale_from: Optional[str],
+    calibrate_from_fp16: Optional[str],
+    input_scale_method: str,
+    input_scale_samples: int,
+    model_type: Optional[str],
+    input_scale_summary_json: Optional[str],
+    input_scale_summary_percentile: float,
+    input_scale_summary_multiplier: float,
+    sensitivity_json: Optional[str],
+    sensitivity_threshold: Optional[float],
+    sensitivity_action: str,
+    clip_rate_threshold: Optional[float],
+    clip_rate_action: str,
+    full_precision_mm: bool,
+    selected_full_precision_layers: List[str],
+    full_precision_mm_pattern_list: List[str],
+    preset: Optional[str],
+    classify_info: Dict,
+    is_sharded: bool,
+    num_shards: int,
+    use_fp8: bool,
+) -> Dict:
+    """Build safetensors metadata with quantization info."""
+    output_metadata = {}
+    if isinstance(metadata, dict):
+        for k, v in metadata.items():
+            output_metadata[str(k)] = str(v) if v is not None else ""
+
+    quantization_metadata = {
+        "format_version": "1.0",
+        "layers": quantized_layer_configs,
+    }
+    output_metadata["_quantization_metadata"] = json.dumps(quantization_metadata)
+
+    output_metadata["nvfp4_converter"] = "convert_nvfp4.py"
+    output_metadata["nvfp4_mode"] = mode
+    output_metadata["nvfp4_quant_dtype"] = quant_dtype
+    output_metadata["nvfp4_quantized_layers"] = str(stats.get("quantized_layers", 0))
+    if gguf_path:
+        output_metadata["nvfp4_gguf"] = str(gguf_path)
+        output_metadata["nvfp4_gguf_nvfp4_max_bitdepth"] = str(gguf_nvfp4_max_bitdepth)
+    if input_scale_from:
+        output_metadata["nvfp4_input_scale_from"] = str(input_scale_from)
+    if calibrate_from_fp16:
+        output_metadata["nvfp4_calibrate_from_fp16"] = str(calibrate_from_fp16)
+        output_metadata["nvfp4_input_scale_method"] = str(input_scale_method)
+        output_metadata["nvfp4_input_scale_samples"] = str(input_scale_samples)
+        if model_type:
+            output_metadata["nvfp4_calibration_model_type"] = str(model_type)
+    if input_scale_summary_json:
+        output_metadata["nvfp4_input_scale_summary_json"] = str(input_scale_summary_json)
+        output_metadata["nvfp4_input_scale_summary_percentile"] = str(
+            input_scale_summary_percentile
+        )
+        output_metadata["nvfp4_input_scale_summary_multiplier"] = str(
+            input_scale_summary_multiplier
+        )
+    if sensitivity_json and sensitivity_threshold is not None:
+        output_metadata["nvfp4_sensitivity_json"] = str(sensitivity_json)
+        output_metadata["nvfp4_sensitivity_threshold"] = str(sensitivity_threshold)
+        output_metadata["nvfp4_sensitivity_action"] = str(sensitivity_action)
+    if sensitivity_json and clip_rate_threshold is not None:
+        output_metadata["nvfp4_clip_rate_json"] = str(sensitivity_json)
+        output_metadata["nvfp4_clip_rate_threshold"] = str(clip_rate_threshold)
+        output_metadata["nvfp4_clip_rate_action"] = str(clip_rate_action)
+    if full_precision_mm:
+        output_metadata["nvfp4_full_precision_mm"] = "true"
+    elif selected_full_precision_layers:
+        output_metadata["nvfp4_full_precision_mm"] = "selective"
+        output_metadata["nvfp4_full_precision_mm_layers"] = str(
+            len(selected_full_precision_layers)
+        )
+        if full_precision_mm_pattern_list:
+            output_metadata["nvfp4_full_precision_mm_patterns"] = json.dumps(
+                full_precision_mm_pattern_list
+            )
+    if gguf_path:
+        output_metadata["nvfp4_preset"] = "gguf"
+    elif preset:
+        output_metadata["nvfp4_preset"] = preset
+        if classify_info.get("num_layers"):
+            output_metadata["nvfp4_num_layers"] = str(classify_info["num_layers"])
+        if classify_info.get("model_type"):
+            output_metadata["nvfp4_model_type"] = str(classify_info["model_type"])
+    if is_sharded:
+        output_metadata["nvfp4_source_shards"] = str(num_shards)
+    if use_fp8 and stats.get("fp8_layers", 0) > 0:
+        output_metadata["nvfp4_fp8_layers"] = str(stats["fp8_layers"])
+
+    return output_metadata
+
+
 # =============================================================================
 # Main Conversion Logic
 # =============================================================================
@@ -1366,6 +1667,8 @@ def convert_to_nvfp4(
     dry_run: bool = False,
     verbose: bool = False,
     use_fp8: bool = False,
+    output_sharded: bool = False,
+    low_mem: bool = False,
 ) -> Dict:
     """
     Convert a safetensors model to NVFP4 quantization.
@@ -1420,6 +1723,8 @@ def convert_to_nvfp4(
         dry_run: If True, only print what would be done
         verbose: Print detailed progress
         use_fp8: If True, use FP8 for intermediate precision layers (Q6_K equivalent)
+        output_sharded: If True, write sharded output + index.json instead of a single file
+        low_mem: If True, avoid loading full tensors for classification (use metadata only)
 
     Returns:
         Dict with conversion statistics
@@ -1463,6 +1768,9 @@ def convert_to_nvfp4(
     if clip_rate_action not in {"fp16", "full_precision_mm"}:
         raise ValueError("--clip-rate-action must be 'fp16' or 'full_precision_mm'")
 
+    if output_sharded and not str(output_path).endswith(".index.json"):
+        raise ValueError("--output-sharded requires OUTPUT to be a .index.json path")
+
     input_scale_map: Dict[str, torch.Tensor] = {}
     input_scale_source: Dict[str, str] = {}
 
@@ -1495,6 +1803,9 @@ def convert_to_nvfp4(
     is_sharded = input_type in ("sharded_index", "sharded_dir")
     num_shards = 0
 
+    if output_sharded and not is_sharded:
+        raise ValueError("--output-sharded is only supported for sharded inputs")
+
     if is_sharded and index_data is not None:
         print(f"Detected sharded model in: {base_path}")
         weight_map = index_data.get("weight_map", {})
@@ -1516,26 +1827,44 @@ def convert_to_nvfp4(
     print(f"Output dtype: {dtype}")
     print(f"Quantization input dtype: {quant_dtype}")
 
-    # First pass: load tensors to classify (we need shapes)
-    # For sharded models, load only weight tensors for classification
-    tensors = {}
+    # First pass: gather info for classification
+    tensors: Dict[str, torch.Tensor] = {}
+    tensor_shapes: Dict[str, Tuple[int, ...]] = {}
+    tensor_dtypes: Dict[str, torch.dtype] = {}
     weight_tensor_names = [n for n in tensor_names if n.endswith(".weight")]
+
+    if output_sharded and not low_mem:
+        low_mem = True
 
     print("Loading tensors for classification...")
 
-    if is_sharded:
-        # Load only weight tensors initially for classification
-        tensors, _, _ = load_sharded_tensors(
-            base_path,
-            index_data,
-            tensor_names=weight_tensor_names,
-            device="cpu",
-            verbose=verbose,
-        )
+    if low_mem:
+        if is_sharded:
+            tensor_shapes, tensor_dtypes = get_tensor_info_from_shards(
+                base_path,
+                index_data,
+                tensor_names if dry_run else weight_tensor_names,
+                verbose=verbose,
+            )
+        else:
+            tensor_shapes, tensor_dtypes = get_tensor_info_from_file(
+                base_path,
+                tensor_names if dry_run else weight_tensor_names,
+                verbose=verbose,
+            )
     else:
-        with safe_open(base_path, framework="pt", device="cpu") as f:
-            for name in tqdm(tensor_names, desc="Loading", disable=not verbose):
-                tensors[name] = f.get_tensor(name)
+        if is_sharded:
+            tensors, _, _ = load_sharded_tensors(
+                base_path,
+                index_data,
+                tensor_names=weight_tensor_names,
+                device="cpu",
+                verbose=verbose,
+            )
+        else:
+            with safe_open(base_path, framework="pt", device="cpu") as f:
+                for name in tqdm(tensor_names, desc="Loading", disable=not verbose):
+                    tensors[name] = f.get_tensor(name)
 
     # Classify layers
     fp32_keep_names: Set[str] = set()
@@ -1544,11 +1873,12 @@ def convert_to_nvfp4(
         quantize_layers, fp8_layers, skip_layers, classify_info, fp32_keep_names = (
             classify_layers_from_gguf(
                 tensor_names,
-                tensors,
+                tensors if not low_mem else None,
                 gguf_types,
                 gguf_nvfp4_max_bitdepth,
                 use_fp8=use_fp8,
                 verbose=verbose,
+                tensor_shapes=tensor_shapes if low_mem else None,
             )
         )
         if use_fp8:
@@ -1584,15 +1914,28 @@ def convert_to_nvfp4(
             else:
                 print("GGUF edge blocks: could not detect block count; skipping.")
     else:
-        quantize_layers, fp8_layers, skip_layers, classify_info = classify_layers(
-            tensor_names,
-            tensors,
-            mode,
-            preset,
-            exclude_patterns or [],
-            include_patterns or [],
-            use_fp8,
-        )
+        if low_mem:
+            quantize_layers, fp8_layers, skip_layers, classify_info = (
+                classify_layers_by_shape(
+                    tensor_names,
+                    tensor_shapes,
+                    mode,
+                    preset,
+                    exclude_patterns or [],
+                    include_patterns or [],
+                    use_fp8,
+                )
+            )
+        else:
+            quantize_layers, fp8_layers, skip_layers, classify_info = classify_layers(
+                tensor_names,
+                tensors,
+                mode,
+                preset,
+                exclude_patterns or [],
+                include_patterns or [],
+                use_fp8,
+            )
 
     if min_ffn_fp8:
         ffn_layers = {l for l in quantize_layers if re.search(r"\.ffn\.(0|2)\b", l)}
@@ -1902,38 +2245,82 @@ def convert_to_nvfp4(
         if verbose and selected_full_precision_layers:
             print(f"  Example: {selected_full_precision_layers[:6]}")
 
+    # FP32 keep patterns from preset (if any)
+    fp32_keep_patterns = []
+    if preset:
+        preset_config = PRESETS.get(preset, {})
+        fp32_keep_patterns = preset_config.get("fp32_keep_patterns", [])
+
+    def should_keep_fp32(tensor_name: str) -> bool:
+        """Check if tensor should stay in FP32 based on preset patterns or GGUF parity."""
+        if tensor_name in fp32_keep_names:
+            return True
+        for pattern in fp32_keep_patterns:
+            if re.search(pattern, tensor_name):
+                return True
+        return False
+
     if dry_run:
         # Calculate estimated sizes - need to load all tensors for accurate size
-        if is_sharded:
-            # Load remaining tensors for size calculation
-            remaining = [n for n in tensor_names if n not in tensors]
-            if remaining:
-                extra_tensors, _, _ = load_sharded_tensors(
-                    base_path,
-                    index_data,
-                    tensor_names=remaining,
-                    device="cpu",
-                    verbose=verbose,
-                )
-                tensors.update(extra_tensors)
+        if not low_mem:
+            if is_sharded:
+                remaining = [n for n in tensor_names if n not in tensors]
+                if remaining:
+                    extra_tensors, _, _ = load_sharded_tensors(
+                        base_path,
+                        index_data,
+                        tensor_names=remaining,
+                        device="cpu",
+                        verbose=verbose,
+                    )
+                    tensors.update(extra_tensors)
 
-        original_size = sum(t.numel() * t.element_size() for t in tensors.values())
+            original_size = sum(t.numel() * t.element_size() for t in tensors.values())
+        else:
+            original_size = 0
+            for name in tensor_names:
+                shape = tensor_shapes.get(name)
+                dtype = tensor_dtypes.get(name)
+                if shape is None or dtype is None:
+                    continue
+                numel = 1
+                for d in shape:
+                    numel *= d
+                original_size += numel * torch.tensor([], dtype=dtype).element_size()
         quantized_size = 0
-        for name, tensor in tensors.items():
-            if name.endswith(".weight"):
-                layer = name[:-7]
-                if layer in quantize_layers:
-                    # FP4: 0.5 bytes per element + block scales overhead (~6.25%)
-                    quantized_size += tensor.numel() * 0.5 * 1.0625
-                    # Plus tensor scale (4 bytes) and comfy_quant (~20 bytes)
-                    quantized_size += 24
-                elif layer in fp8_layers:
-                    # FP8: 1 byte per element
-                    quantized_size += tensor.numel() * 1
+        if not low_mem:
+            for name, tensor in tensors.items():
+                if name.endswith(".weight"):
+                    layer = name[:-7]
+                    if layer in quantize_layers:
+                        quantized_size += tensor.numel() * 0.5 * 1.0625
+                        quantized_size += 24
+                    elif layer in fp8_layers:
+                        quantized_size += tensor.numel() * 1
+                    else:
+                        quantized_size += tensor.numel() * tensor.element_size()
                 else:
                     quantized_size += tensor.numel() * tensor.element_size()
-            else:
-                quantized_size += tensor.numel() * tensor.element_size()
+        else:
+            for name in tensor_names:
+                shape = tensor_shapes.get(name)
+                dtype = tensor_dtypes.get(name)
+                if shape is None or dtype is None:
+                    continue
+                numel = 1
+                for d in shape:
+                    numel *= d
+                if name.endswith(".weight"):
+                    layer = name[:-7]
+                    if layer in quantize_layers:
+                        quantized_size += numel * 0.5 * 1.0625
+                        quantized_size += 24
+                    elif layer in fp8_layers:
+                        quantized_size += numel * 1
+                    else:
+                        quantized_size += numel * torch.tensor([], dtype=dtype).element_size()
+                else:
+                    quantized_size += numel * torch.tensor([], dtype=dtype).element_size()
 
         print(f"\n--- Estimated sizes ---")
         print(f"Original size: {original_size / 1e9:.2f} GB")
@@ -1948,8 +2335,257 @@ def convert_to_nvfp4(
             "estimated_size": quantized_size,
         }
 
-    # For sharded models in non-dry-run, load all tensors now
-    if is_sharded:
+    if output_sharded:
+        if index_data is None:
+            raise ValueError("Sharded output requires sharded input with index.json")
+
+        output_index_path = output_path_obj
+        output_dir = output_index_path.parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build shard mappings
+        weight_map = index_data.get("weight_map", {})
+        shard_to_tensors: Dict[str, List[str]] = {}
+        for name, shard_file in weight_map.items():
+            shard_to_tensors.setdefault(shard_file, []).append(name)
+
+        output_prefix = output_index_path.name
+        if output_prefix.endswith(".index.json"):
+            output_prefix = output_prefix[: -len(".index.json")]
+        if output_prefix.endswith(".safetensors"):
+            output_prefix = output_prefix[: -len(".safetensors")]
+
+        def _map_shard_name(in_name: str) -> str:
+            match = re.search(r"(-\d{5}-of-\d{5}\.safetensors)$", in_name)
+            if match:
+                return f"{output_prefix}{match.group(1)}"
+            return in_name
+
+        shard_name_map = {s: _map_shard_name(s) for s in shard_to_tensors.keys()}
+
+        output_weight_map: Dict[str, str] = {}
+        quantized_layer_configs = {}
+        stats = {
+            "quantized_layers": 0,
+            "fp8_layers": 0,
+            "skipped_layers": len(skip_layers),
+            "original_bytes": 0,
+            "quantized_bytes": 0,
+        }
+
+        processed_layer_tensors = {f"{l}.weight" for l in quantize_layers}
+        processed_layer_tensors |= {f"{l}.weight" for l in fp8_layers}
+
+        shard_files = sorted(shard_to_tensors.keys())
+        print("\nQuantizing shards (streaming output)...")
+
+        for shard_file in tqdm(shard_files, desc="Processing shards"):
+            shard_path = base_path / shard_file
+            out_shard_name = shard_name_map[shard_file]
+            out_shard_path = output_dir / out_shard_name
+            shard_tensor_names = shard_to_tensors[shard_file]
+
+            output_tensors = {}
+            skip_names: Set[str] = set()
+
+            with safe_open(shard_path, framework="pt", device="cpu") as f:
+                for name in shard_tensor_names:
+                    if name in skip_names:
+                        continue
+
+                    if name.endswith(".weight"):
+                        layer = name[:-7]
+                        weight = f.get_tensor(name)
+                        stats["original_bytes"] += weight.numel() * weight.element_size()
+
+                        if layer in quantize_layers:
+                            weight_device = weight.to(device=device, dtype=quantize_input_dtype)
+                            try:
+                                if use_ck_quant and ck is not None:
+                                    tensor_scale = torch.amax(weight.float().abs()) / (
+                                        F8_E4M3_MAX * F4_E2M1_MAX
+                                    )
+                                    tensor_scale = tensor_scale.to(torch.float32)
+                                    quantized_weight, block_scale = ck.quantize_nvfp4(
+                                        weight_device, tensor_scale, pad_16x=True
+                                    )
+                                else:
+                                    quantized_weight, block_scale, tensor_scale = quantize_nvfp4(
+                                        weight_device
+                                    )
+                            except Exception as e:
+                                print(f"\nWarning: Failed to quantize {layer}: {e}")
+                                output_tensors[name] = weight
+                                output_weight_map[name] = out_shard_name
+                                if device == "cuda":
+                                    torch.cuda.empty_cache()
+                                continue
+
+                            output_tensors[name] = quantized_weight.cpu()
+                            output_tensors[f"{layer}.weight_scale"] = block_scale.cpu()
+                            output_tensors[f"{layer}.weight_scale_2"] = tensor_scale.cpu()
+                            output_weight_map[name] = out_shard_name
+                            output_weight_map[f"{layer}.weight_scale"] = out_shard_name
+                            output_weight_map[f"{layer}.weight_scale_2"] = out_shard_name
+
+                            quant_conf = {"format": "nvfp4"}
+                            if _use_full_precision_mm(layer):
+                                quant_conf["full_precision_matrix_mult"] = True
+                            quantized_layer_configs[layer] = quant_conf
+
+                            if add_input_scale:
+                                if layer in input_scale_map:
+                                    output_tensors[f"{layer}.input_scale"] = input_scale_map[
+                                        layer
+                                    ]
+                                else:
+                                    if input_scale_value is None:
+                                        activation_amax_estimate = 10.0
+                                        fallback_value = activation_amax_estimate / (
+                                            F8_E4M3_MAX * F4_E2M1_MAX
+                                        )
+                                    else:
+                                        fallback_value = input_scale_value
+                                    input_scale = torch.tensor(
+                                        [fallback_value], dtype=torch.float32, device="cpu"
+                                    )
+                                    output_tensors[f"{layer}.input_scale"] = input_scale
+                                output_weight_map[f"{layer}.input_scale"] = out_shard_name
+
+                            bias_name = f"{layer}.bias"
+                            if bias_name in shard_tensor_names:
+                                output_tensors[bias_name] = f.get_tensor(bias_name)
+                                output_weight_map[bias_name] = out_shard_name
+                                skip_names.add(bias_name)
+
+                            stats["quantized_layers"] += 1
+                            stats["quantized_bytes"] += (
+                                quantized_weight.numel() * quantized_weight.element_size()
+                                + block_scale.numel() * block_scale.element_size()
+                                + tensor_scale.numel() * tensor_scale.element_size()
+                            )
+
+                            del weight_device
+                            if device == "cuda":
+                                torch.cuda.empty_cache()
+                            continue
+
+                        if layer in fp8_layers:
+                            weight_device = weight.to(device=device, dtype=quantize_input_dtype)
+                            try:
+                                fp8_weight, scale = quantize_fp8(weight_device)
+                            except Exception as e:
+                                print(f"\nWarning: Failed to FP8 quantize {layer}: {e}")
+                                output_tensors[name] = weight
+                                output_weight_map[name] = out_shard_name
+                                if device == "cuda":
+                                    torch.cuda.empty_cache()
+                                continue
+
+                            output_tensors[name] = fp8_weight.cpu()
+                            output_tensors[f"{layer}.weight_scale"] = scale.cpu()
+                            output_weight_map[name] = out_shard_name
+                            output_weight_map[f"{layer}.weight_scale"] = out_shard_name
+
+                            quantized_layer_configs[layer] = {"format": "float8_e4m3fn"}
+
+                            bias_name = f"{layer}.bias"
+                            if bias_name in shard_tensor_names:
+                                output_tensors[bias_name] = f.get_tensor(bias_name)
+                                output_weight_map[bias_name] = out_shard_name
+                                skip_names.add(bias_name)
+
+                            stats["fp8_layers"] += 1
+                            stats["quantized_bytes"] += (
+                                fp8_weight.numel() * fp8_weight.element_size()
+                                + scale.numel() * scale.element_size()
+                            )
+
+                            del weight_device
+                            if device == "cuda":
+                                torch.cuda.empty_cache()
+                            continue
+
+                        # Non-quantized weight
+                        if weight.dtype == torch.float32 and not should_keep_fp32(name):
+                            weight = weight.to(dtype=compute_dtype)
+                        output_tensors[name] = weight
+                        output_weight_map[name] = out_shard_name
+                        stats["quantized_bytes"] += weight.numel() * weight.element_size()
+                        continue
+
+                    # Non-weight tensors
+                    if name in processed_layer_tensors:
+                        continue
+
+                    tensor = f.get_tensor(name)
+                    stats["original_bytes"] += tensor.numel() * tensor.element_size()
+
+                    if name.endswith(".bias"):
+                        layer = name[:-5]
+                        if layer in quantize_layers or layer in fp8_layers:
+                            output_tensors[name] = tensor
+                            output_weight_map[name] = out_shard_name
+                            continue
+
+                    if tensor.dtype == torch.float32 and not should_keep_fp32(name):
+                        tensor = tensor.to(dtype=compute_dtype)
+
+                    output_tensors[name] = tensor
+                    output_weight_map[name] = out_shard_name
+                    stats["quantized_bytes"] += tensor.numel() * tensor.element_size()
+
+            save_file(output_tensors, out_shard_path)
+
+        output_metadata = build_output_metadata(
+            metadata,
+            quantized_layer_configs,
+            mode,
+            quant_dtype,
+            stats,
+            gguf_path,
+            gguf_nvfp4_max_bitdepth,
+            input_scale_from,
+            calibrate_from_fp16,
+            input_scale_method,
+            input_scale_samples,
+            model_type,
+            input_scale_summary_json,
+            input_scale_summary_percentile,
+            input_scale_summary_multiplier,
+            sensitivity_json,
+            sensitivity_threshold,
+            sensitivity_action,
+            clip_rate_threshold,
+            clip_rate_action,
+            full_precision_mm,
+            selected_full_precision_layers,
+            full_precision_mm_pattern_list,
+            preset,
+            classify_info,
+            is_sharded,
+            num_shards,
+            use_fp8,
+        )
+
+        index_out = {"metadata": output_metadata, "weight_map": output_weight_map}
+        output_index_path.write_text(json.dumps(index_out, indent=2), encoding="utf-8")
+
+        print("\n" + "=" * 50)
+        print("Conversion complete!")
+        print("=" * 50)
+        print(f"Sharded output saved to: {output_index_path}")
+        print(f"Quantized layers (NVFP4): {stats['quantized_layers']}")
+        if stats["fp8_layers"] > 0:
+            print(f"Quantized layers (FP8): {stats['fp8_layers']}")
+        print(f"Skipped layers (FP16): {stats['skipped_layers']}")
+        print(f"Original size: {stats['original_bytes'] / 1e9:.2f} GB")
+        print(f"Quantized size: {stats['quantized_bytes'] / 1e9:.2f} GB")
+
+        return stats
+
+    # For sharded models in non-dry-run, load all tensors now (unless streaming output)
+    if is_sharded and not output_sharded:
         print("Loading all tensors from shards...")
         tensors, _, _ = load_sharded_tensors(
             base_path, index_data, device="cpu", verbose=verbose
@@ -2109,21 +2745,6 @@ def convert_to_nvfp4(
                 torch.cuda.empty_cache()
 
     # Copy non-quantized tensors, converting FP32 to BF16/FP16 where appropriate
-    # Get FP32 keep patterns from preset (if any)
-    fp32_keep_patterns = []
-    if preset:
-        preset_config = PRESETS.get(preset, {})
-        fp32_keep_patterns = preset_config.get("fp32_keep_patterns", [])
-
-    def should_keep_fp32(tensor_name: str) -> bool:
-        """Check if tensor should stay in FP32 based on preset patterns or GGUF parity."""
-        if tensor_name in fp32_keep_names:
-            return True
-        for pattern in fp32_keep_patterns:
-            if re.search(pattern, tensor_name):
-                return True
-        return False
-
     print("Copying non-quantized tensors...")
     fp32_converted = 0
     fp32_kept = 0
@@ -2153,76 +2774,36 @@ def convert_to_nvfp4(
     # Save output
     print(f"\nSaving to: {output_path_obj}")
 
-    # Prepare metadata - safetensors requires all values to be strings
-    output_metadata = {}
-    if isinstance(metadata, dict):
-        for k, v in metadata.items():
-            output_metadata[str(k)] = str(v) if v is not None else ""
-
-    # Add _quantization_metadata - this is required for ComfyUI to recognize quantized layers
-    quantization_metadata = {
-        "format_version": "1.0",
-        "layers": quantized_layer_configs,
-    }
-    output_metadata["_quantization_metadata"] = json.dumps(quantization_metadata)
-
-    # Add our converter metadata
-    output_metadata["nvfp4_converter"] = "convert_nvfp4.py"
-    output_metadata["nvfp4_mode"] = mode
-    output_metadata["nvfp4_quant_dtype"] = quant_dtype  # Track quantization input dtype
-    output_metadata["nvfp4_quantized_layers"] = str(stats["quantized_layers"])
-    if gguf_path:
-        output_metadata["nvfp4_gguf"] = str(gguf_path)
-        output_metadata["nvfp4_gguf_nvfp4_max_bitdepth"] = str(
-            gguf_nvfp4_max_bitdepth
-        )
-    if input_scale_from:
-        output_metadata["nvfp4_input_scale_from"] = str(input_scale_from)
-    if calibrate_from_fp16:
-        output_metadata["nvfp4_calibrate_from_fp16"] = str(calibrate_from_fp16)
-        output_metadata["nvfp4_input_scale_method"] = str(input_scale_method)
-        output_metadata["nvfp4_input_scale_samples"] = str(input_scale_samples)
-        if model_type:
-            output_metadata["nvfp4_calibration_model_type"] = str(model_type)
-    if input_scale_summary_json:
-        output_metadata["nvfp4_input_scale_summary_json"] = str(input_scale_summary_json)
-        output_metadata["nvfp4_input_scale_summary_percentile"] = str(
-            input_scale_summary_percentile
-        )
-        output_metadata["nvfp4_input_scale_summary_multiplier"] = str(
-            input_scale_summary_multiplier
-        )
-    if sensitivity_json and sensitivity_threshold is not None:
-        output_metadata["nvfp4_sensitivity_json"] = str(sensitivity_json)
-        output_metadata["nvfp4_sensitivity_threshold"] = str(sensitivity_threshold)
-        output_metadata["nvfp4_sensitivity_action"] = str(sensitivity_action)
-    if sensitivity_json and clip_rate_threshold is not None:
-        output_metadata["nvfp4_clip_rate_json"] = str(sensitivity_json)
-        output_metadata["nvfp4_clip_rate_threshold"] = str(clip_rate_threshold)
-        output_metadata["nvfp4_clip_rate_action"] = str(clip_rate_action)
-    if full_precision_mm:
-        output_metadata["nvfp4_full_precision_mm"] = "true"
-    elif selected_full_precision_layers:
-        output_metadata["nvfp4_full_precision_mm"] = "selective"
-        output_metadata["nvfp4_full_precision_mm_layers"] = str(
-            len(selected_full_precision_layers)
-        )
-        if full_precision_mm_pattern_list:
-            output_metadata["nvfp4_full_precision_mm_patterns"] = json.dumps(
-                full_precision_mm_pattern_list
-            )
-    if gguf_path:
-        output_metadata["nvfp4_preset"] = "gguf"
-    elif preset:
-        output_metadata["nvfp4_preset"] = preset
-        if classify_info.get("num_layers"):
-            output_metadata["nvfp4_num_layers"] = str(classify_info["num_layers"])
-        if classify_info.get("model_type"):
-            output_metadata["nvfp4_model_type"] = str(classify_info["model_type"])
-    if is_sharded:
-        output_metadata["nvfp4_source_shards"] = str(num_shards)
-    if use_fp8 and stats["fp8_layers"] > 0:
-        output_metadata["nvfp4_fp8_layers"] = str(stats["fp8_layers"])
+    output_metadata = build_output_metadata(
+        metadata,
+        quantized_layer_configs,
+        mode,
+        quant_dtype,
+        stats,
+        gguf_path,
+        gguf_nvfp4_max_bitdepth,
+        input_scale_from,
+        calibrate_from_fp16,
+        input_scale_method,
+        input_scale_samples,
+        model_type,
+        input_scale_summary_json,
+        input_scale_summary_percentile,
+        input_scale_summary_multiplier,
+        sensitivity_json,
+        sensitivity_threshold,
+        sensitivity_action,
+        clip_rate_threshold,
+        clip_rate_action,
+        full_precision_mm,
+        selected_full_precision_layers,
+        full_precision_mm_pattern_list,
+        preset,
+        classify_info,
+        is_sharded,
+        num_shards,
+        use_fp8,
+    )
 
     save_file(output_tensors, output_path_obj, metadata=output_metadata)
 
@@ -2403,6 +2984,19 @@ Supported models:
         "--use-ck-quant",
         action="store_true",
         help="Use comfy_kitchen quantize_nvfp4 for backend-compatible packing",
+    )
+    general_group.add_argument(
+        "--output-sharded",
+        action="store_true",
+        help=(
+            "Write sharded output with .index.json instead of a single file. "
+            "Reduces RAM usage for very large models (OUTPUT must be .index.json)."
+        ),
+    )
+    general_group.add_argument(
+        "--low-mem",
+        action="store_true",
+        help="Avoid loading full tensors for classification (uses metadata only)",
     )
     general_group.add_argument(
         "--device",
@@ -2751,6 +3345,8 @@ Supported models:
             dry_run=args.dry_run,
             verbose=args.verbose,
             use_fp8=args.use_fp8,
+            output_sharded=args.output_sharded,
+            low_mem=args.low_mem,
         )
     except KeyboardInterrupt:
         print("\nConversion cancelled.")
