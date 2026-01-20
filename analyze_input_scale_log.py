@@ -21,7 +21,7 @@ Usage:
       --input nvfp4_scales.txt \
       --csv nvfp4_scales_summary.csv \
       --json nvfp4_scales_summary.json \
-      --percentiles 50,90,95,99 \
+      --percentiles 50,90,95,99,99.9 \
       --mode dynamic
 """
 
@@ -35,12 +35,12 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 
-def _parse_percentiles(value: str) -> List[int]:
+def _parse_percentiles(value: str) -> List[float]:
     parts = [p.strip() for p in value.split(",") if p.strip()]
-    percentiles = []
+    percentiles: List[float] = []
     for p in parts:
         try:
-            pct = int(p)
+            pct = float(p)
         except ValueError as exc:
             raise argparse.ArgumentTypeError(f"Invalid percentile: {p}") from exc
         if pct < 0 or pct > 100:
@@ -51,7 +51,7 @@ def _parse_percentiles(value: str) -> List[int]:
     return sorted(set(percentiles))
 
 
-def _percentile(sorted_vals: List[float], pct: int) -> float:
+def _percentile(sorted_vals: List[float], pct: float) -> float:
     if not sorted_vals:
         return float("nan")
     if pct <= 0:
@@ -66,6 +66,41 @@ def _percentile(sorted_vals: List[float], pct: int) -> float:
     d0 = sorted_vals[f] * (c - k)
     d1 = sorted_vals[c] * (k - f)
     return d0 + d1
+
+
+def _pct_key(pct: float) -> str:
+    pct_str = str(pct).rstrip("0").rstrip(".")
+    return pct_str.replace(".", "_")
+
+
+def _step_percentile_stats(
+    values: List[float], steps: int, cfg_passes: int, pct: float
+) -> Tuple[float, float, float, int]:
+    """
+    Compute per-step percentile across all prompts/passes, then summarize.
+
+    Returns:
+        (mean, min, max, step_count)
+    """
+    if steps <= 0 or cfg_passes <= 0 or not values:
+        return float("nan"), float("nan"), float("nan"), 0
+    step_buckets: List[List[float]] = [[] for _ in range(steps)]
+    for i, v in enumerate(values):
+        step_idx = (i // cfg_passes) % steps
+        step_buckets[step_idx].append(v)
+    step_percentiles: List[float] = []
+    for bucket in step_buckets:
+        if not bucket:
+            continue
+        step_percentiles.append(_percentile(sorted(bucket), pct))
+    if not step_percentiles:
+        return float("nan"), float("nan"), float("nan"), 0
+    return (
+        sum(step_percentiles) / len(step_percentiles),
+        min(step_percentiles),
+        max(step_percentiles),
+        len(step_percentiles),
+    )
 
 
 def _stddev(values: List[float]) -> float:
@@ -142,15 +177,33 @@ def main() -> None:
     )
     parser.add_argument(
         "--percentiles",
-        default="50,90,95,99",
+        default="50,90,95,99,99.9",
         type=_parse_percentiles,
-        help="Comma-separated percentiles (default: 50,90,95,99)",
+        help="Comma-separated percentiles (supports decimals, e.g. 99.9)",
     )
     parser.add_argument(
         "--mode",
         choices=["dynamic", "provided", "all"],
         default="dynamic",
         help="Filter by log mode (default: dynamic)",
+    )
+    parser.add_argument(
+        "--steps",
+        type=int,
+        default=None,
+        help="Number of diffusion steps (enables step-aware stats)",
+    )
+    parser.add_argument(
+        "--cfg-passes",
+        type=int,
+        default=1,
+        help="Number of passes per step (e.g. 2 for CFG: cond+uncond)",
+    )
+    parser.add_argument(
+        "--step-percentile",
+        type=float,
+        default=99.9,
+        help="Percentile to compute per step (default: 99.9)",
     )
     args = parser.parse_args()
 
@@ -193,6 +246,12 @@ def main() -> None:
 
     rows: List[Dict[str, object]] = []
 
+    step_pct_key = None
+    if args.steps is not None:
+        pct_str = str(args.step_percentile).rstrip("0").rstrip(".")
+        pct_str = pct_str.replace(".", "_")
+        step_pct_key = f"scale_step_p{pct_str}"
+
     for layer in sorted(scale_by_layer.keys()):
         scales = scale_by_layer[layer]
         amaxes = amax_by_layer.get(layer, [])
@@ -210,7 +269,16 @@ def main() -> None:
             "scale_outlier_frac_3std": _outlier_frac(scales_sorted, 3.0),
         }
         for pct in args.percentiles:
-            row[f"scale_p{pct}"] = _percentile(scales_sorted, pct)
+            row[f"scale_p{_pct_key(pct)}"] = _percentile(scales_sorted, pct)
+
+        if args.steps is not None:
+            mean_p, min_p, max_p, step_count = _step_percentile_stats(
+                scales, args.steps, args.cfg_passes, args.step_percentile
+            )
+            row[f"{step_pct_key}_mean"] = mean_p
+            row[f"{step_pct_key}_min"] = min_p
+            row[f"{step_pct_key}_max"] = max_p
+            row[f"{step_pct_key}_steps"] = step_count
 
         if amax_sorted:
             row.update(
@@ -224,7 +292,7 @@ def main() -> None:
                 }
             )
             for pct in args.percentiles:
-                row[f"amax_p{pct}"] = _percentile(amax_sorted, pct)
+                row[f"amax_p{_pct_key(pct)}"] = _percentile(amax_sorted, pct)
 
         rows.append(row)
 
@@ -238,7 +306,15 @@ def main() -> None:
         "scale_std",
         "scale_kurtosis",
         "scale_outlier_frac_3std",
-    ] + [f"scale_p{p}" for p in args.percentiles]
+    ] + [f"scale_p{_pct_key(p)}" for p in args.percentiles]
+
+    if step_pct_key:
+        fields += [
+            f"{step_pct_key}_mean",
+            f"{step_pct_key}_min",
+            f"{step_pct_key}_max",
+            f"{step_pct_key}_steps",
+        ]
 
     if rows and "amax_min" in rows[0]:
         fields += [
@@ -248,7 +324,7 @@ def main() -> None:
             "amax_std",
             "amax_kurtosis",
             "amax_outlier_frac_3std",
-        ] + [f"amax_p{p}" for p in args.percentiles]
+        ] + [f"amax_p{_pct_key(p)}" for p in args.percentiles]
 
     if args.csv:
         _write_csv(Path(args.csv), rows, fields)

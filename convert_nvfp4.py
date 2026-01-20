@@ -1335,7 +1335,7 @@ def convert_to_nvfp4(
     input_scale_samples: int = 8,
     comfyui_root: Optional[str] = None,
     input_scale_summary_json: Optional[str] = None,
-    input_scale_summary_percentile: int = 99,
+    input_scale_summary_percentile: float = 99.0,
     input_scale_summary_multiplier: float = 1.0,
     input_scale_summary_fp16_std: bool = False,
     input_scale_summary_std_threshold: Optional[float] = None,
@@ -1683,7 +1683,9 @@ def convert_to_nvfp4(
                 f"Input scale summary not found: {input_scale_summary_json}"
             )
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        percentile_key = f"scale_p{input_scale_summary_percentile}"
+        pct_str = str(input_scale_summary_percentile).rstrip("0").rstrip(".")
+        pct_str = pct_str.replace(".", "_")
+        percentile_key = f"scale_p{pct_str}"
         summary_layers = summary.get("layers", [])
         summary_map: Dict[str, torch.Tensor] = {}
         summary_rows_by_layer: Dict[str, Dict] = {}
@@ -2510,9 +2512,9 @@ Supported models:
     )
     summary_group.add_argument(
         "--input-scale-summary-percentile",
-        type=int,
-        default=99,
-        help="Percentile key to use from summary JSON (default: 99)",
+        type=float,
+        default=99.0,
+        help="Percentile key to use from summary JSON (default: 99; supports 99.9)",
     )
     summary_group.add_argument(
         "--input-scale-summary-multiplier",
