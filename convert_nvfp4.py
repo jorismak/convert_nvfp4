@@ -425,17 +425,20 @@ def _load_layer_list(path: Optional[str]) -> Set[str]:
 
 
 def _load_sensitivity_overrides(
-    sensitivity_json: Optional[str], threshold: Optional[float]
+    sensitivity_json: Optional[str],
+    threshold: Optional[float],
+    metric_key: str = "rel_rmse_mean",
 ) -> Set[str]:
     """
-    Load layers from a sensitivity JSON file whose rel_rmse_mean exceeds threshold.
+    Load layers from a sensitivity JSON file whose metric exceeds threshold.
 
     Args:
         sensitivity_json: Path to sensitivity.json
-        threshold: rel_rmse_mean threshold (layers > threshold will be FP16/BF16)
+        threshold: Metric threshold (layers > threshold will be flagged)
+        metric_key: Metric name in JSON (default: rel_rmse_mean)
 
     Returns:
-        Set of layer names to force FP16/BF16
+        Set of layer names to force FP16/BF16 or full-precision mm
     """
     if not sensitivity_json or threshold is None:
         return set()
@@ -450,7 +453,7 @@ def _load_sensitivity_overrides(
     for row in layers:
         try:
             layer = row.get("layer")
-            value = float(row.get("rel_rmse_mean"))
+            value = float(row.get(metric_key))
         except Exception:
             continue
         if layer and value > threshold:
@@ -1344,6 +1347,8 @@ def convert_to_nvfp4(
     sensitivity_json: Optional[str] = None,
     sensitivity_threshold: Optional[float] = None,
     sensitivity_action: str = "fp16",
+    clip_rate_threshold: Optional[float] = None,
+    clip_rate_action: str = "fp16",
     full_precision_mm: bool = False,
     full_precision_mm_layers: Optional[Set[str]] = None,
     full_precision_mm_patterns: Optional[List[str]] = None,
@@ -1391,6 +1396,11 @@ def convert_to_nvfp4(
         input_scale_summary_std_threshold: Absolute scale_std threshold for FP16/BF16
         input_scale_summary_cv_threshold: Relative scale_std/scale_mean threshold for FP16/BF16
         input_scale_layer_summary: Print per-layer input_scale values after conversion
+        sensitivity_json: Optional sensitivity.json path for rel_rmse_mean overrides
+        sensitivity_threshold: rel_rmse_mean threshold for FP16/BF16 overrides
+        sensitivity_action: Action for sensitivity layers (fp16 or full_precision_mm)
+        clip_rate_threshold: clip_rate_mean threshold for FP16/BF16 overrides
+        clip_rate_action: Action for clip_rate layers (fp16 or full_precision_mm)
         full_precision_mm: Force full-precision matmul for quantized layers
         full_precision_mm_layers: Optional allowlist of layer names to force full-precision
         full_precision_mm_patterns: Optional regex patterns (matched against layer name)
@@ -1441,6 +1451,12 @@ def convert_to_nvfp4(
         raise ValueError("--sensitivity-threshold must be > 0")
     if sensitivity_action not in {"fp16", "full_precision_mm"}:
         raise ValueError("--sensitivity-action must be 'fp16' or 'full_precision_mm'")
+    if clip_rate_threshold is not None and clip_rate_threshold < 0:
+        raise ValueError("--clip-rate-threshold must be >= 0")
+    if clip_rate_threshold is not None and not sensitivity_json:
+        raise ValueError("--clip-rate-threshold requires --sensitivity-json")
+    if clip_rate_action not in {"fp16", "full_precision_mm"}:
+        raise ValueError("--clip-rate-action must be 'fp16' or 'full_precision_mm'")
 
     input_scale_map: Dict[str, torch.Tensor] = {}
     input_scale_source: Dict[str, str] = {}
@@ -1593,7 +1609,7 @@ def convert_to_nvfp4(
     sensitivity_flagged_layers: Set[str] = set()
     if sensitivity_json and sensitivity_threshold is not None:
         sensitivity_flagged_layers = _load_sensitivity_overrides(
-            sensitivity_json, sensitivity_threshold
+            sensitivity_json, sensitivity_threshold, "rel_rmse_mean"
         )
         if sensitivity_flagged_layers:
             if sensitivity_action == "fp16":
@@ -1611,6 +1627,29 @@ def convert_to_nvfp4(
                 print(
                     "Sensitivity override (full_precision_mm): "
                     f"flagged={len(sensitivity_flagged_layers)} (threshold={sensitivity_threshold})"
+                )
+
+    clip_rate_flagged_layers: Set[str] = set()
+    if sensitivity_json and clip_rate_threshold is not None:
+        clip_rate_flagged_layers = _load_sensitivity_overrides(
+            sensitivity_json, clip_rate_threshold, "clip_rate_mean"
+        )
+        if clip_rate_flagged_layers:
+            if clip_rate_action == "fp16":
+                moved_nvfp4 = clip_rate_flagged_layers & quantize_layers
+                moved_fp8 = clip_rate_flagged_layers & fp8_layers
+                quantize_layers -= moved_nvfp4
+                fp8_layers -= moved_fp8
+                skip_layers |= (moved_nvfp4 | moved_fp8)
+                print(
+                    "Clip-rate override (fp16): "
+                    f"flagged={len(clip_rate_flagged_layers)}, moved_nvfp4={len(moved_nvfp4)}, "
+                    f"moved_fp8={len(moved_fp8)} (threshold={clip_rate_threshold})"
+                )
+            else:
+                print(
+                    "Clip-rate override (full_precision_mm): "
+                    f"flagged={len(clip_rate_flagged_layers)} (threshold={clip_rate_threshold})"
                 )
 
     if min_ffn_fp8:
@@ -1804,6 +1843,8 @@ def convert_to_nvfp4(
     full_precision_mm_layer_set = set(full_precision_mm_layers or [])
     if sensitivity_action == "full_precision_mm" and sensitivity_flagged_layers:
         full_precision_mm_layer_set |= sensitivity_flagged_layers
+    if clip_rate_action == "full_precision_mm" and clip_rate_flagged_layers:
+        full_precision_mm_layer_set |= clip_rate_flagged_layers
     full_precision_mm_pattern_list = list(full_precision_mm_patterns or [])
     if full_precision_mm_cross_attn_kv:
         full_precision_mm_pattern_list.extend(
@@ -2147,6 +2188,10 @@ def convert_to_nvfp4(
         output_metadata["nvfp4_sensitivity_json"] = str(sensitivity_json)
         output_metadata["nvfp4_sensitivity_threshold"] = str(sensitivity_threshold)
         output_metadata["nvfp4_sensitivity_action"] = str(sensitivity_action)
+    if sensitivity_json and clip_rate_threshold is not None:
+        output_metadata["nvfp4_clip_rate_json"] = str(sensitivity_json)
+        output_metadata["nvfp4_clip_rate_threshold"] = str(clip_rate_threshold)
+        output_metadata["nvfp4_clip_rate_action"] = str(clip_rate_action)
     if full_precision_mm:
         output_metadata["nvfp4_full_precision_mm"] = "true"
     elif selected_full_precision_layers:
@@ -2545,7 +2590,7 @@ Supported models:
         "--sensitivity-json",
         default=None,
         metavar="PATH",
-        help="Path to sensitivity.json (rel_rmse_mean stats) for FP16 overrides",
+        help="Path to sensitivity.json (rel_rmse_mean/clip_rate_mean stats) for overrides",
     )
     sensitivity_group.add_argument(
         "--sensitivity-threshold",
@@ -2558,6 +2603,18 @@ Supported models:
         choices=["fp16", "full_precision_mm"],
         default="fp16",
         help="Action for sensitivity layers: move to FP16/BF16 or mark full-precision matmul",
+    )
+    sensitivity_group.add_argument(
+        "--clip-rate-threshold",
+        type=float,
+        default=None,
+        help="clip_rate_mean threshold; layers above this stay FP16/BF16",
+    )
+    sensitivity_group.add_argument(
+        "--clip-rate-action",
+        choices=["fp16", "full_precision_mm"],
+        default="fp16",
+        help="Action for clip_rate layers: move to FP16/BF16 or mark full-precision matmul",
     )
 
     full_precision_group = parser.add_argument_group("Full-precision-mm")
@@ -2655,6 +2712,8 @@ Supported models:
             sensitivity_json=args.sensitivity_json,
             sensitivity_threshold=args.sensitivity_threshold,
             sensitivity_action=args.sensitivity_action,
+            clip_rate_threshold=args.clip_rate_threshold,
+            clip_rate_action=args.clip_rate_action,
             full_precision_mm=args.full_precision_mm,
             full_precision_mm_layers=_load_layer_list(args.full_precision_mm_layers),
             full_precision_mm_patterns=args.full_precision_mm_pattern,
