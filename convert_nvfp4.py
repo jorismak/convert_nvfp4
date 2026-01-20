@@ -2518,6 +2518,9 @@ def convert_to_nvfp4(
                     if name in processed_layer_tensors:
                         continue
 
+                    if not add_input_scale and name.endswith(".input_scale"):
+                        continue
+
                     tensor = f.get_tensor(name)
                     stats["original_bytes"] += tensor.numel() * tensor.element_size()
 
@@ -2750,6 +2753,8 @@ def convert_to_nvfp4(
     fp32_kept = 0
     for name in tqdm(tensor_names, desc="Copying"):
         if name not in output_tensors and name not in processed_layer_tensors:
+            if not add_input_scale and name.endswith(".input_scale"):
+                continue
             tensor = tensors[name]
             original_size = tensor.numel() * tensor.element_size()
             stats["original_bytes"] += original_size
