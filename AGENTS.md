@@ -2,7 +2,7 @@
 
 # Notes about workspace directory
 
-You might need to edit or scan/analyze the ComfyUI sourcecode. This is available in `comfyui-source` but is a symlink / junction. THIS CAN LOOP if you go into `comfyui-source\nvfp4-conv` so keep out!
+You might need to edit or scan/analyze the ComfyUI sourcecode. This is available in `comfyui-source`.
 
 You might need the comfy-kitchen sourecode (this contains multiple backends for tensor handling in modern comfyui, enabling nvfp4 code). This is checked out in `comfy-kitchen` in the workspace. This is just for you to reference / analyze, not modify.
 
