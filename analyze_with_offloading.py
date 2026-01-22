@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import math
 import sys
@@ -712,7 +713,21 @@ def _run_wan_calibration_with_progress(
 ) -> None:
     for i in range(samples):
         progress.start_sample(i + 1, samples, layer_total)
-        run_wan_calibration_passes(model, in_dim, 1, device)
+        try:
+            run_wan_calibration_passes(model, in_dim, 1, device)
+        except Exception as exc:
+            print(f"Calibration failed on sample {i + 1}/{samples}: {exc}")
+            if device == "cuda":
+                try:
+                    allocated = torch.cuda.memory_allocated() / (1024 ** 3)
+                    reserved = torch.cuda.memory_reserved() / (1024 ** 3)
+                    print(f"CUDA memory: allocated={allocated:.2f}GB reserved={reserved:.2f}GB")
+                except Exception:
+                    pass
+            raise
+        if device == "cuda":
+            torch.cuda.empty_cache()
+        gc.collect()
 
 
 def _run_qwen_calibration_with_progress(
@@ -724,7 +739,21 @@ def _run_qwen_calibration_with_progress(
 ) -> None:
     for i in range(samples):
         progress.start_sample(i + 1, samples, layer_total)
-        run_qwen_calibration_passes(model, 1, device)
+        try:
+            run_qwen_calibration_passes(model, 1, device)
+        except Exception as exc:
+            print(f"Calibration failed on sample {i + 1}/{samples}: {exc}")
+            if device == "cuda":
+                try:
+                    allocated = torch.cuda.memory_allocated() / (1024 ** 3)
+                    reserved = torch.cuda.memory_reserved() / (1024 ** 3)
+                    print(f"CUDA memory: allocated={allocated:.2f}GB reserved={reserved:.2f}GB")
+                except Exception:
+                    pass
+            raise
+        if device == "cuda":
+            torch.cuda.empty_cache()
+        gc.collect()
 
 
 def _to_float8_e4m3(t: torch.Tensor) -> torch.Tensor:
