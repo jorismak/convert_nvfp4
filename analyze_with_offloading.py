@@ -34,6 +34,7 @@ except Exception:  # pragma: no cover - optional dependency
     plt = None
 
 import torch
+import torch.nn.functional as F
 
 from nvfp4_calibration import (
     MODEL_TYPES,
@@ -156,6 +157,104 @@ class _DiskLinear(torch.nn.Module):
         return out
 
 
+class _DiskConvNd(torch.nn.Module):
+    def __init__(
+        self,
+        layer_name: str,
+        conv_dim: int,
+        has_bias: bool,
+        loader: "_SafeTensorLoader",
+        stride,
+        padding,
+        dilation,
+        groups: int,
+        padding_mode: str,
+    ) -> None:
+        super().__init__()
+        self.layer_name = layer_name
+        self.conv_dim = conv_dim
+        self.has_bias = has_bias
+        self.loader = loader
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+        self.groups = groups
+        self.padding_mode = padding_mode
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        weight_key = f"{self.layer_name}.weight"
+        bias_key = f"{self.layer_name}.bias"
+
+        weight = self.loader.get_tensor(weight_key)
+        bias = None
+        if self.has_bias and bias_key in self.loader:
+            bias = self.loader.get_tensor(bias_key)
+
+        weight = weight.to(device=input.device, dtype=input.dtype)
+        if bias is not None:
+            bias = bias.to(device=input.device, dtype=input.dtype)
+
+        if self.padding_mode != "zeros":
+            input = F.pad(input, self._reversed_padding(), mode=self.padding_mode)
+            padding = 0
+        else:
+            padding = self.padding
+
+        if self.conv_dim == 1:
+            out = F.conv1d(input, weight, bias, self.stride, padding, self.dilation, self.groups)
+        elif self.conv_dim == 2:
+            out = F.conv2d(input, weight, bias, self.stride, padding, self.dilation, self.groups)
+        else:
+            out = F.conv3d(input, weight, bias, self.stride, padding, self.dilation, self.groups)
+
+        del weight, bias
+        return out
+
+    def _reversed_padding(self):
+        if isinstance(self.padding, tuple):
+            padding = self.padding
+        else:
+            padding = (self.padding,) * self.conv_dim
+        return tuple(p for p in reversed(padding) for _ in range(2))
+
+
+class _DiskEmbedding(torch.nn.Module):
+    def __init__(
+        self,
+        layer_name: str,
+        loader: "_SafeTensorLoader",
+        padding_idx: Optional[int],
+        max_norm: Optional[float],
+        norm_type: float,
+        scale_grad_by_freq: bool,
+        sparse: bool,
+    ) -> None:
+        super().__init__()
+        self.layer_name = layer_name
+        self.loader = loader
+        self.padding_idx = padding_idx
+        self.max_norm = max_norm
+        self.norm_type = norm_type
+        self.scale_grad_by_freq = scale_grad_by_freq
+        self.sparse = sparse
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        weight_key = f"{self.layer_name}.weight"
+        weight = self.loader.get_tensor(weight_key)
+        weight = weight.to(device=input.device)
+        out = F.embedding(
+            input,
+            weight,
+            self.padding_idx,
+            self.max_norm,
+            self.norm_type,
+            self.scale_grad_by_freq,
+            self.sparse,
+        )
+        del weight
+        return out
+
+
 def _resolve_comfyui_root(user_root: Optional[str]) -> Path:
     if user_root:
         return Path(user_root)
@@ -260,6 +359,14 @@ def _is_linear_module(module: torch.nn.Module) -> bool:
     return False
 
 
+def _is_conv_module(module: torch.nn.Module) -> bool:
+    return isinstance(module, (torch.nn.Conv1d, torch.nn.Conv2d, torch.nn.Conv3d))
+
+
+def _is_embedding_module(module: torch.nn.Module) -> bool:
+    return isinstance(module, torch.nn.Embedding)
+
+
 def _replace_linear_modules(
     model: torch.nn.Module,
     loader: _SafeTensorLoader,
@@ -271,28 +378,60 @@ def _replace_linear_modules(
     for name, module in list(model.named_modules()):
         if name == "":
             continue
-        if not _is_linear_module(module):
-            continue
         parent = model
         parts = name.split(".")
         for part in parts[:-1]:
             parent = getattr(parent, part)
         child_name = parts[-1]
-        has_bias = getattr(module, "bias", None) is not None
-        in_features = int(module.weight.shape[1])
-        out_features = int(module.weight.shape[0])
-        disk_linear = _DiskLinear(
-            layer_name=name,
-            in_features=in_features,
-            out_features=out_features,
-            has_bias=has_bias,
-            loader=loader,
-            device=device,
-            gpu_block_batch_size=gpu_block_batch_size,
-            progress=progress,
-        )
-        setattr(parent, child_name, disk_linear)
-        replaced.append(name)
+        if _is_linear_module(module):
+            has_bias = getattr(module, "bias", None) is not None
+            in_features = int(module.weight.shape[1])
+            out_features = int(module.weight.shape[0])
+            disk_linear = _DiskLinear(
+                layer_name=name,
+                in_features=in_features,
+                out_features=out_features,
+                has_bias=has_bias,
+                loader=loader,
+                device=device,
+                gpu_block_batch_size=gpu_block_batch_size,
+                progress=progress,
+            )
+            setattr(parent, child_name, disk_linear)
+            replaced.append(name)
+            continue
+
+        if _is_conv_module(module):
+            has_bias = getattr(module, "bias", None) is not None
+            conv_dim = int(module.weight.dim() - 2)
+            disk_conv = _DiskConvNd(
+                layer_name=name,
+                conv_dim=conv_dim,
+                has_bias=has_bias,
+                loader=loader,
+                stride=module.stride,
+                padding=module.padding,
+                dilation=module.dilation,
+                groups=module.groups,
+                padding_mode=getattr(module, "padding_mode", "zeros"),
+            )
+            setattr(parent, child_name, disk_conv)
+            replaced.append(name)
+            continue
+
+        if _is_embedding_module(module):
+            disk_emb = _DiskEmbedding(
+                layer_name=name,
+                loader=loader,
+                padding_idx=module.padding_idx,
+                max_norm=module.max_norm,
+                norm_type=module.norm_type,
+                scale_grad_by_freq=module.scale_grad_by_freq,
+                sparse=module.sparse,
+            )
+            setattr(parent, child_name, disk_emb)
+            replaced.append(name)
+            continue
 
     return replaced
 
@@ -452,7 +591,7 @@ def _build_model_for_calibration_offload(
     replaced = _replace_linear_modules(
         model, loader, device, gpu_block_batch_size, progress
     )
-    print(f"Replaced {len(replaced)} Linear layers with disk-backed offload")
+    print(f"Replaced {len(replaced)} weight layers with disk-backed offload")
     print("Streaming non-linear weights...")
     _stream_load_state_dict(model, loader, device="cpu")
     print("Non-linear weights loaded.")
