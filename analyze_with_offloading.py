@@ -180,6 +180,13 @@ class _DiskConvNd(torch.nn.Module):
         self.dilation = dilation
         self.groups = groups
         self.padding_mode = padding_mode
+        self.weight_shape = None
+        self._patch_in_channels = None
+
+    def set_weight_shape(self, shape: torch.Size) -> None:
+        self.weight_shape = tuple(shape)
+        if len(shape) >= 2:
+            self._patch_in_channels = int(shape[1])
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         weight_key = f"{self.layer_name}.weight"
@@ -262,12 +269,13 @@ def _resolve_comfyui_root(user_root: Optional[str]) -> Path:
 
 
 class _SafeTensorLoader:
-    def __init__(self, model_path: str) -> None:
+    def __init__(self, model_path: str, cache_handles: bool = True) -> None:
         from safetensors import safe_open
 
         self._safe_open = safe_open
         self.path = Path(model_path)
         self._handles = {}
+        self.cache_handles = cache_handles
 
         if self.path.name.endswith(".safetensors.index.json"):
             import json as _json
@@ -295,6 +303,8 @@ class _SafeTensorLoader:
         return key in self.weight_map
 
     def _get_handle(self, path: Path):
+        if not self.cache_handles:
+            return self._safe_open(path, framework="pt", device="cpu")
         handle = self._handles.get(path)
         if handle is None:
             handle = self._safe_open(path, framework="pt", device="cpu")
@@ -303,15 +313,21 @@ class _SafeTensorLoader:
 
     def get_tensor(self, key: str) -> torch.Tensor:
         if self.weight_map is None:
-            handle = self._get_handle(self._single_file)
-            return handle.get_tensor(key)
+            if self.cache_handles:
+                handle = self._get_handle(self._single_file)
+                return handle.get_tensor(key)
+            with self._safe_open(self._single_file, framework="pt", device="cpu") as f:
+                return f.get_tensor(key)
 
         rel_path = self.weight_map.get(key)
         if rel_path is None:
             raise KeyError(f"Missing tensor key '{key}' in safetensors index")
         shard_path = self.base_dir / rel_path
-        handle = self._get_handle(shard_path)
-        return handle.get_tensor(key)
+        if self.cache_handles:
+            handle = self._get_handle(shard_path)
+            return handle.get_tensor(key)
+        with self._safe_open(shard_path, framework="pt", device="cpu") as f:
+            return f.get_tensor(key)
 
     def close(self) -> None:
         for handle in self._handles.values():
@@ -323,18 +339,37 @@ class _SafeTensorLoader:
 
 
 def _stream_load_state_dict(
-    model, loader: _SafeTensorLoader, device: str
+    model,
+    loader: _SafeTensorLoader,
+    device: str,
+    skip_prefixes: Optional[set[str]] = None,
 ) -> None:
     param_map = dict(model.named_parameters())
     buffer_map = dict(model.named_buffers())
     missing = []
+    loaded = 0
+    skipped = 0
+    total = len(model.state_dict().keys())
 
     with torch.no_grad():
         for key in model.state_dict().keys():
+            if skip_prefixes is not None:
+                skip = False
+                for prefix in skip_prefixes:
+                    if key.startswith(prefix + ".") and (key.endswith(".weight") or key.endswith(".bias")):
+                        skip = True
+                        break
+                if skip:
+                    skipped += 1
+                    continue
             if key not in loader:
                 missing.append(key)
                 continue
-            tensor = loader.get_tensor(key)
+            try:
+                tensor = loader.get_tensor(key)
+            except Exception as exc:
+                print(f"Failed to load tensor '{key}': {exc}")
+                raise
             if key in param_map:
                 target = param_map[key]
                 target.copy_(tensor.to(dtype=target.dtype, device=target.device))
@@ -342,6 +377,9 @@ def _stream_load_state_dict(
                 target = buffer_map[key]
                 target.copy_(tensor.to(dtype=target.dtype, device=target.device))
             del tensor
+            loaded += 1
+            if loaded % 50 == 0:
+                print(f"Loaded {loaded}/{total} tensors (skipped {skipped})")
 
     if missing:
         print(f"  Missing keys during low-mem load: {len(missing)}")
@@ -373,7 +411,7 @@ def _replace_linear_modules(
     device: str,
     gpu_block_batch_size: int,
     progress: _ProgressReporter,
-) -> List[str]:
+) -> set[str]:
     replaced = []
     for name, module in list(model.named_modules()):
         if name == "":
@@ -415,6 +453,7 @@ def _replace_linear_modules(
                 groups=module.groups,
                 padding_mode=getattr(module, "padding_mode", "zeros"),
             )
+            disk_conv.set_weight_shape(module.weight.shape)
             setattr(parent, child_name, disk_conv)
             replaced.append(name)
             continue
@@ -433,7 +472,7 @@ def _replace_linear_modules(
             replaced.append(name)
             continue
 
-    return replaced
+    return set(replaced)
 
 
 def _build_wan_model_from_loader(
@@ -582,7 +621,7 @@ def _build_model_for_calibration_offload(
     gpu_block_batch_size: int,
     progress: _ProgressReporter,
 ):
-    loader = _SafeTensorLoader(model_path)
+    loader = _SafeTensorLoader(model_path, cache_handles=False)
     if model_type in WAN_MODEL_TYPES:
         model = _build_wan_model_from_loader(loader, device, comfyui_root, model_type)
     else:
@@ -593,7 +632,7 @@ def _build_model_for_calibration_offload(
     )
     print(f"Replaced {len(replaced)} weight layers with disk-backed offload")
     print("Streaming non-linear weights...")
-    _stream_load_state_dict(model, loader, device="cpu")
+    _stream_load_state_dict(model, loader, device="cpu", skip_prefixes=replaced)
     print("Non-linear weights loaded.")
     if device != "cpu":
         print(f"Moving non-linear weights to {device}...")
@@ -601,6 +640,17 @@ def _build_model_for_calibration_offload(
         print("Move complete.")
     model.eval()
     return model, loader
+
+
+def _get_wan_patch_in_dim(model) -> int:
+    patch = model.patch_embedding
+    if hasattr(patch, "weight") and isinstance(getattr(patch, "weight"), torch.Tensor):
+        return int(patch.weight.shape[1])
+    if hasattr(patch, "_patch_in_channels") and patch._patch_in_channels is not None:
+        return int(patch._patch_in_channels)
+    if hasattr(patch, "weight_shape") and patch.weight_shape is not None:
+        return int(patch.weight_shape[1])
+    raise AttributeError("Unable to infer patch_embedding input channels")
 
 
 def _to_float8_e4m3(t: torch.Tensor) -> torch.Tensor:
@@ -885,7 +935,7 @@ def main() -> None:
     print(f"Registered {len(hooks)} activation hooks")
 
     if args.model_type in WAN_MODEL_TYPES:
-        in_dim = model.patch_embedding.weight.shape[1]
+        in_dim = _get_wan_patch_in_dim(model)
         run_wan_calibration_passes(model, in_dim, args.samples, args.device)
     else:
         run_qwen_calibration_passes(model, args.samples, args.device)
