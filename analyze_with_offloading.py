@@ -67,6 +67,29 @@ NVFP4_BLOCK_SIZE = 16
 class _ProgressReporter:
     def __init__(self) -> None:
         self._seen = set()
+        self._seen_in_sample = set()
+        self._sample_index = 0
+        self._sample_total = 0
+        self._layer_index = 0
+        self._layer_total = 0
+
+    def start_sample(self, index: int, total: int, layer_total: int) -> None:
+        self._sample_index = index
+        self._sample_total = total
+        self._layer_total = layer_total
+        self._layer_index = 0
+        self._seen_in_sample = set()
+        print(f"Running sample {index}/{total}...")
+
+    def log_layer_progress(self, name: str) -> None:
+        if name in self._seen_in_sample:
+            return
+        self._seen_in_sample.add(name)
+        self._layer_index += 1
+        print(
+            f"Running sample {self._sample_index}/{self._sample_total}, "
+            f"processing layer {self._layer_index}/{self._layer_total}: {name}"
+        )
 
     def log_layer(self, name: str, elapsed: float, chunked: bool) -> None:
         if name in self._seen:
@@ -679,16 +702,29 @@ def _get_wan_patch_in_dim(model) -> int:
     raise AttributeError("Unable to infer patch_embedding input channels")
 
 
-def _run_wan_calibration_with_progress(model, in_dim: int, samples: int, device: str) -> None:
+def _run_wan_calibration_with_progress(
+    model,
+    in_dim: int,
+    samples: int,
+    device: str,
+    progress: _ProgressReporter,
+    layer_total: int,
+) -> None:
     for i in range(samples):
+        progress.start_sample(i + 1, samples, layer_total)
         run_wan_calibration_passes(model, in_dim, 1, device)
-        print(f"Calibration progress: {i + 1}/{samples}")
 
 
-def _run_qwen_calibration_with_progress(model, samples: int, device: str) -> None:
+def _run_qwen_calibration_with_progress(
+    model,
+    samples: int,
+    device: str,
+    progress: _ProgressReporter,
+    layer_total: int,
+) -> None:
     for i in range(samples):
+        progress.start_sample(i + 1, samples, layer_total)
         run_qwen_calibration_passes(model, 1, device)
-        print(f"Calibration progress: {i + 1}/{samples}")
 
 
 def _to_float8_e4m3(t: torch.Tensor) -> torch.Tensor:
@@ -933,6 +969,8 @@ def main() -> None:
             if x.dim() < 2:
                 return
 
+            progress.log_layer_progress(name)
+
             if name in input_scale_map:
                 input_scale = input_scale_map[name]
             else:
@@ -971,12 +1009,17 @@ def main() -> None:
             hooks.append(module.register_forward_hook(make_hook(name)))
 
     print(f"Registered {len(hooks)} activation hooks")
+    layer_total = len(hooks)
 
     if args.model_type in WAN_MODEL_TYPES:
         in_dim = _get_wan_patch_in_dim(model)
-        _run_wan_calibration_with_progress(model, in_dim, args.samples, args.device)
+        _run_wan_calibration_with_progress(
+            model, in_dim, args.samples, args.device, progress, layer_total
+        )
     else:
-        _run_qwen_calibration_with_progress(model, args.samples, args.device)
+        _run_qwen_calibration_with_progress(
+            model, args.samples, args.device, progress, layer_total
+        )
 
     for h in hooks:
         h.remove()
