@@ -1,0 +1,3895 @@
+{
+  "model": "wan2.2-i2v-a14b-high-noise\\diffusion_pytorch_model.safetensors.index.json",
+  "model_type": "wan22_i2v_highnoise",
+  "samples": 16,
+  "layers": [
+    {
+      "layer": "text_embedding.2",
+      "count": 16,
+      "rel_rmse_mean": 0.09569456882358132,
+      "mean_abs_mean": 0.09449318144470453,
+      "clip_rate_mean": 0.0334879404399544,
+      "max_abs": 1.3229165077209473
+    },
+    {
+      "layer": "blocks.0.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": 0.09533099642789848,
+      "mean_abs_mean": 0.06754034664481878,
+      "clip_rate_mean": 0.034354461589828134,
+      "max_abs": 1.8333330154418945
+    },
+    {
+      "layer": "text_embedding.0",
+      "count": 16,
+      "rel_rmse_mean": 0.09511790806961795,
+      "mean_abs_mean": 0.07145008957013488,
+      "clip_rate_mean": 0.03422573208808899,
+      "max_abs": 0.6852676868438721
+    },
+    {
+      "layer": "blocks.0.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.0.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.0.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.0.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.0.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": 0.09180571857355656,
+      "mean_abs_mean": 0.030639231903478503,
+      "clip_rate_mean": 0.03327571018598974,
+      "max_abs": 0.7455356121063232
+    },
+    {
+      "layer": "blocks.0.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.09180571857355656,
+      "mean_abs_mean": 0.030639231903478503,
+      "clip_rate_mean": 0.03327571018598974,
+      "max_abs": 0.7455356121063232
+    },
+    {
+      "layer": "blocks.0.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09180571857355656,
+      "mean_abs_mean": 0.030639231903478503,
+      "clip_rate_mean": 0.03327571018598974,
+      "max_abs": 0.7455356121063232
+    },
+    {
+      "layer": "time_projection.1",
+      "count": 16,
+      "rel_rmse_mean": 0.09007901351511795,
+      "mean_abs_mean": 0.0015219520646496676,
+      "clip_rate_mean": 0.03283691476099193,
+      "max_abs": 0.0314825177192688
+    },
+    {
+      "layer": "blocks.0.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": 0.08593113722794112,
+      "mean_abs_mean": 0.05607095640152693,
+      "clip_rate_mean": 0.033035563537850976,
+      "max_abs": 1.84375
+    },
+    {
+      "layer": "time_embedding.0",
+      "count": 16,
+      "rel_rmse_mean": 0.08416314460898663,
+      "mean_abs_mean": 0.04232714301906526,
+      "clip_rate_mean": 0.014404296875,
+      "max_abs": 0.1653645634651184
+    },
+    {
+      "layer": "blocks.0.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.0.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.0.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.1.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.1.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.1.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.1.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.1.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.1.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.1.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.1.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.1.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.1.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.1.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.1.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.2.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.2.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.2.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.2.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.2.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.2.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.2.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.2.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.2.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.2.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.2.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.2.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.3.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.3.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.3.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.3.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.3.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.3.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.3.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.3.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.3.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.3.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.3.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.3.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.4.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.4.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.4.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.4.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.4.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.4.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.4.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.4.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.4.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.4.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.4.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.4.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.5.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.5.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.5.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.5.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.5.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.5.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.5.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.5.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.5.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.5.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.5.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.5.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.6.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.6.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.6.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.6.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.6.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.6.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.6.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.6.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.6.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.6.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.6.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.6.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.7.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.7.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.7.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.7.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.7.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.7.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.7.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.7.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.7.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.7.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.7.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.7.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.8.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.8.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.8.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.8.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.8.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.8.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.8.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.8.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.8.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.8.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.8.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.8.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.9.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.9.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.9.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.9.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.9.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.9.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.9.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.9.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.9.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.9.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.9.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.9.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.10.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.10.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.10.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.10.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.10.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.10.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.10.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.10.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.10.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.10.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.10.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.10.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.11.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.11.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.11.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.11.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.11.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.11.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.11.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.11.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.11.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.11.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.11.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.11.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.12.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.12.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.12.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.12.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.12.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.12.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.12.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.12.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.12.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.12.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.12.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.12.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.13.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.13.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.13.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.13.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.13.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.13.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.13.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.13.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.13.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.13.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.13.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.13.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.14.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.14.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.14.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.14.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.14.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.14.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.14.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.14.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.14.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.14.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.14.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.14.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.15.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.15.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.15.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.15.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.15.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.15.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.15.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.15.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.15.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.15.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.15.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.15.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.16.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.16.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.16.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.16.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.16.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.16.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.16.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.16.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.16.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.16.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.16.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.16.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.17.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.17.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.17.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.17.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.17.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.17.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.17.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.17.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.17.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.17.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.17.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.17.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.18.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.18.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.18.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.18.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.18.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.18.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.18.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.18.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.18.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.18.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.18.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.18.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.19.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.19.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.19.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.19.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.19.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.19.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.19.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.19.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.19.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.19.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.19.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.19.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.20.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.20.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.20.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.20.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.20.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.20.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.20.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.20.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.20.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.20.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.20.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.20.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.21.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.21.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.21.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.21.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.21.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.21.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.21.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.21.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.21.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.21.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.21.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.21.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.22.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.22.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.22.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.22.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.22.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.22.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.22.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.22.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.22.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.22.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.22.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.22.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.23.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.23.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.23.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.23.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.23.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.23.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.23.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.23.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.23.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.23.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.23.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.23.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.24.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.24.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.24.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.24.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.24.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.24.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.24.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.24.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.24.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.24.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.24.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.24.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.25.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.25.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.25.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.25.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.25.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.25.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.25.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.25.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.25.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.25.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.25.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.25.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.26.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.26.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.26.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.26.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.26.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.26.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.26.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.26.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.26.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.26.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.26.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.26.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.27.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.27.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.27.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.27.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.27.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.27.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.27.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.27.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.27.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.27.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.27.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.27.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.28.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.28.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.28.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.28.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.28.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.28.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.28.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.28.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.28.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.28.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.28.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.28.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.29.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.29.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.29.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.29.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.29.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.29.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.29.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.29.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.29.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.29.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.29.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.29.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.30.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.30.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.30.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.30.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.30.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.30.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.30.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.30.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.30.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.30.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.30.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.30.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.31.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.31.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.31.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.31.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.31.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.31.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.31.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.31.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.31.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.31.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.31.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.31.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.32.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.32.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.32.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.32.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.32.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.32.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.32.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.32.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.32.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.32.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.32.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.32.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.33.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.33.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.33.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.33.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.33.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.33.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.33.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.33.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.33.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.33.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.33.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.33.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.34.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.34.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.34.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.34.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.34.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.34.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.34.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.34.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.34.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.34.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.34.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.34.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.35.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.35.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.35.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.35.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.35.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.35.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.35.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.35.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.35.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.35.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.35.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.35.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.36.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.36.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.36.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.36.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.36.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.36.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.36.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.36.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.36.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.36.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.36.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.36.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.37.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.37.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.37.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.37.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.37.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.37.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.5653896872480897,
+      "mean_abs_mean": 0.9918916262686253,
+      "clip_rate_mean": 0.5191442854702473,
+      "max_abs": 16.1828670501709
+    },
+    {
+      "layer": "blocks.37.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.37.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.37.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.37.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.37.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.37.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.38.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.38.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.38.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.38.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.38.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.38.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.38.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.38.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.38.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.38.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.38.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.38.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.39.self_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.39.self_attn.k",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.39.self_attn.v",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.39.self_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.39.cross_attn.q",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.39.cross_attn.k",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.39.cross_attn.v",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.39.cross_attn.k_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "blocks.39.cross_attn.v_img",
+      "count": 16,
+      "rel_rmse_mean": 0.09507946971425357,
+      "mean_abs_mean": 0.21555351372808218,
+      "clip_rate_mean": 0.03409819724038243,
+      "max_abs": 2.2053565979003906
+    },
+    {
+      "layer": "time_embedding.2",
+      "count": 16,
+      "rel_rmse_mean": 0.07585482661385747,
+      "mean_abs_mean": 0.001096170333767077,
+      "clip_rate_mean": 0.03364257887005806,
+      "max_abs": 0.04868859052658081
+    },
+    {
+      "layer": "blocks.39.cross_attn.o",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.39.ffn.0",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "blocks.39.ffn.2",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    },
+    {
+      "layer": "head.head",
+      "count": 16,
+      "rel_rmse_mean": NaN,
+      "mean_abs_mean": NaN,
+      "clip_rate_mean": 0.0,
+      "max_abs": 0.0
+    }
+  ]
+}
