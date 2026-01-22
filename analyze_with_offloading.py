@@ -100,12 +100,11 @@ class _DiskLinear(torch.nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         start_time = time.time()
-        weight_key = f"{self.layer_name}.weight"
-        bias_key = f"{self.layer_name}.bias"
+        weight_key, bias_key = self._resolve_keys()
 
         weight = self.loader.get_tensor(weight_key)
         bias = None
-        if self.has_bias and bias_key in self.loader:
+        if self.has_bias and bias_key is not None and bias_key in self.loader:
             bias = self.loader.get_tensor(bias_key)
 
         target_device = input.device
@@ -155,6 +154,33 @@ class _DiskLinear(torch.nn.Module):
             torch.cuda.empty_cache()
         del weight, bias
         return out
+
+    def _resolve_keys(self) -> tuple[str, Optional[str]]:
+        weight_key = f"{self.layer_name}.weight"
+        bias_key = f"{self.layer_name}.bias"
+        if weight_key in self.loader:
+            return weight_key, bias_key
+
+        candidates = []
+        for suffix in ("_img", "_txt"):
+            if self.layer_name.endswith(suffix):
+                base = self.layer_name[: -len(suffix)]
+                candidates.append(f"{base}.weight")
+                candidates.append(f"{base}.bias")
+
+        for token in ("k_img", "q_img", "v_img", "k_txt", "q_txt", "v_txt"):
+            if token in self.layer_name:
+                base = self.layer_name.replace("_img", "").replace("_txt", "")
+                candidates.append(f"{base}.weight")
+                candidates.append(f"{base}.bias")
+                break
+
+        for cand in candidates:
+            if cand.endswith(".weight") and cand in self.loader:
+                bias_cand = cand.replace(".weight", ".bias")
+                return cand, bias_cand
+
+        raise KeyError(f"Missing tensor key '{weight_key}' in safetensors index")
 
 
 class _DiskConvNd(torch.nn.Module):
