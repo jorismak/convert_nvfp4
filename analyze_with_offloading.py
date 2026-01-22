@@ -39,8 +39,6 @@ from nvfp4_calibration import (
     MODEL_TYPES,
     QWEN_MODEL_TYPES,
     WAN_MODEL_TYPES,
-    build_qwen_model_for_calibration,
-    build_wan_model_for_calibration,
     run_qwen_calibration_passes,
     run_wan_calibration_passes,
 )
@@ -164,54 +162,6 @@ def _resolve_comfyui_root(user_root: Optional[str]) -> Path:
     return REPO_ROOT.parents[0]
 
 
-def _load_state_dict_for_calibration(model_path: str) -> Dict[str, torch.Tensor]:
-    from safetensors import safe_open
-
-    path = Path(model_path)
-    if path.suffix == ".safetensors":
-        state_dict: Dict[str, torch.Tensor] = {}
-        with safe_open(path, framework="pt", device="cpu") as f:
-            for key in f.keys():
-                state_dict[key] = f.get_tensor(key)
-        return state_dict
-
-    if path.suffixes[-2:] == [".safetensors", ".index"] or path.name.endswith(
-        ".safetensors.index.json"
-    ):
-        import json as _json
-
-        index = _json.loads(path.read_text(encoding="utf-8"))
-        weight_map = index.get("weight_map", {})
-        state_dict: Dict[str, torch.Tensor] = {}
-        base_dir = path.parent
-        for key, rel_path in weight_map.items():
-            shard_path = base_dir / rel_path
-            with safe_open(shard_path, framework="pt", device="cpu") as f:
-                state_dict[key] = f.get_tensor(key)
-        return state_dict
-
-    return torch.load(path, map_location="cpu")
-
-
-def _build_model_for_calibration(
-    model_path: str,
-    model_type: str,
-    device: str,
-    comfyui_root: Optional[str],
-):
-    state_dict = _load_state_dict_for_calibration(model_path)
-    if model_type in WAN_MODEL_TYPES:
-        model = build_wan_model_for_calibration(
-            state_dict, device, comfyui_root, model_type
-        )
-    else:
-        model = build_qwen_model_for_calibration(
-            state_dict, device, comfyui_root, model_type
-        )
-
-    return model
-
-
 class _SafeTensorLoader:
     def __init__(self, model_path: str) -> None:
         from safetensors import safe_open
@@ -292,6 +242,7 @@ def _stream_load_state_dict(
             elif key in buffer_map:
                 target = buffer_map[key]
                 target.copy_(tensor.to(dtype=target.dtype, device=target.device))
+            del tensor
 
     if missing:
         print(f"  Missing keys during low-mem load: {len(missing)}")
@@ -484,26 +435,6 @@ def _build_qwen_model_from_loader(
     return model
 
 
-def _build_model_for_calibration_low_mem(
-    model_path: str,
-    model_type: str,
-    device: str,
-    comfyui_root: Optional[str],
-):
-    loader = _SafeTensorLoader(model_path)
-    try:
-        if model_type in WAN_MODEL_TYPES:
-            model = _build_wan_model_from_loader(loader, device, comfyui_root, model_type)
-        else:
-            model = _build_qwen_model_from_loader(loader, device, comfyui_root, model_type)
-
-        _stream_load_state_dict(model, loader, device)
-        model.eval()
-        return model
-    finally:
-        loader.close()
-
-
 def _build_model_for_calibration_offload(
     model_path: str,
     model_type: str,
@@ -522,10 +453,13 @@ def _build_model_for_calibration_offload(
         model, loader, device, gpu_block_batch_size, progress
     )
     print(f"Replaced {len(replaced)} Linear layers with disk-backed offload")
-
+    print("Streaming non-linear weights...")
     _stream_load_state_dict(model, loader, device="cpu")
+    print("Non-linear weights loaded.")
     if device != "cpu":
+        print(f"Moving non-linear weights to {device}...")
         model.to(device=device)
+        print("Move complete.")
     model.eval()
     return model, loader
 
@@ -690,11 +624,6 @@ def main() -> None:
         help="Chunk output rows per GPU batch for linear layers (0 = full layer)",
     )
     parser.add_argument(
-        "--low-mem",
-        action="store_true",
-        help="Stream weights from safetensors to reduce peak RAM (supports .safetensors or .safetensors.index.json)",
-    )
-    parser.add_argument(
         "--comfyui-root",
         default=None,
         metavar="PATH",
@@ -750,12 +679,8 @@ def main() -> None:
 
     progress = _ProgressReporter()
 
-    if args.low_mem:
-        model = _build_model_for_calibration_low_mem(
-            args.fp16_model, args.model_type, args.device, args.comfyui_root
-        )
-        loader = None
-    else:
+    print("Building model shell (no full state_dict load)...")
+    try:
         model, loader = _build_model_for_calibration_offload(
             args.fp16_model,
             args.model_type,
@@ -764,6 +689,10 @@ def main() -> None:
             args.gpu_block_batch_size,
             progress,
         )
+    except Exception as exc:
+        print(f"Error while building model: {exc}")
+        raise
+    print("Model ready; starting calibration passes...")
 
     import torch.nn as nn
 
