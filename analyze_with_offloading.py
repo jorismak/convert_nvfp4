@@ -679,6 +679,18 @@ def _get_wan_patch_in_dim(model) -> int:
     raise AttributeError("Unable to infer patch_embedding input channels")
 
 
+def _run_wan_calibration_with_progress(model, in_dim: int, samples: int, device: str) -> None:
+    for i in range(samples):
+        run_wan_calibration_passes(model, in_dim, 1, device)
+        print(f"Calibration progress: {i + 1}/{samples}")
+
+
+def _run_qwen_calibration_with_progress(model, samples: int, device: str) -> None:
+    for i in range(samples):
+        run_qwen_calibration_passes(model, 1, device)
+        print(f"Calibration progress: {i + 1}/{samples}")
+
+
 def _to_float8_e4m3(t: torch.Tensor) -> torch.Tensor:
     try:
         return t.to(torch.float8_e4m3fn).to(torch.float32)
@@ -962,9 +974,9 @@ def main() -> None:
 
     if args.model_type in WAN_MODEL_TYPES:
         in_dim = _get_wan_patch_in_dim(model)
-        run_wan_calibration_passes(model, in_dim, args.samples, args.device)
+        _run_wan_calibration_with_progress(model, in_dim, args.samples, args.device)
     else:
-        run_qwen_calibration_passes(model, args.samples, args.device)
+        _run_qwen_calibration_with_progress(model, args.samples, args.device)
 
     for h in hooks:
         h.remove()
