@@ -81,6 +81,21 @@ def _load_state_dict_for_calibration(model_path: str) -> Dict[str, torch.Tensor]
                 state_dict[key] = f.get_tensor(key)
         return state_dict
 
+    if path.suffixes[-2:] == [".safetensors", ".index"] or path.name.endswith(
+        ".safetensors.index.json"
+    ):
+        import json as _json
+
+        index = _json.loads(path.read_text(encoding="utf-8"))
+        weight_map = index.get("weight_map", {})
+        state_dict: Dict[str, torch.Tensor] = {}
+        base_dir = path.parent
+        for key, rel_path in weight_map.items():
+            shard_path = base_dir / rel_path
+            with safe_open(shard_path, framework="pt", device="cpu") as f:
+                state_dict[key] = f.get_tensor(key)
+        return state_dict
+
     return torch.load(path, map_location="cpu")
 
 
@@ -101,6 +116,251 @@ def _build_model_for_calibration(
         )
 
     return model
+
+
+class _SafeTensorLoader:
+    def __init__(self, model_path: str) -> None:
+        from safetensors import safe_open
+
+        self._safe_open = safe_open
+        self.path = Path(model_path)
+        self._handles = {}
+
+        if self.path.name.endswith(".safetensors.index.json"):
+            import json as _json
+
+            index = _json.loads(self.path.read_text(encoding="utf-8"))
+            self.weight_map = index.get("weight_map", {})
+            self.base_dir = self.path.parent
+            self._keys = list(self.weight_map.keys())
+            self._single_file = None
+        elif self.path.suffix == ".safetensors":
+            self.weight_map = None
+            self.base_dir = self.path.parent
+            self._single_file = self.path
+            with self._safe_open(self._single_file, framework="pt", device="cpu") as f:
+                self._keys = list(f.keys())
+        else:
+            raise ValueError("Low-mem loader only supports .safetensors or .safetensors.index.json")
+
+    def keys(self):
+        return self._keys
+
+    def __contains__(self, key: str) -> bool:
+        if self.weight_map is None:
+            return key in self._keys
+        return key in self.weight_map
+
+    def _get_handle(self, path: Path):
+        handle = self._handles.get(path)
+        if handle is None:
+            handle = self._safe_open(path, framework="pt", device="cpu")
+            self._handles[path] = handle
+        return handle
+
+    def get_tensor(self, key: str) -> torch.Tensor:
+        if self.weight_map is None:
+            handle = self._get_handle(self._single_file)
+            return handle.get_tensor(key)
+
+        rel_path = self.weight_map.get(key)
+        if rel_path is None:
+            raise KeyError(f"Missing tensor key '{key}' in safetensors index")
+        shard_path = self.base_dir / rel_path
+        handle = self._get_handle(shard_path)
+        return handle.get_tensor(key)
+
+    def close(self) -> None:
+        for handle in self._handles.values():
+            try:
+                handle.__exit__(None, None, None)
+            except Exception:
+                pass
+        self._handles.clear()
+
+
+def _stream_load_state_dict(
+    model, loader: _SafeTensorLoader, device: str
+) -> None:
+    param_map = dict(model.named_parameters())
+    buffer_map = dict(model.named_buffers())
+    missing = []
+
+    with torch.no_grad():
+        for key in model.state_dict().keys():
+            if key not in loader:
+                missing.append(key)
+                continue
+            tensor = loader.get_tensor(key)
+            if key in param_map:
+                target = param_map[key]
+                target.copy_(tensor.to(dtype=target.dtype, device=target.device))
+            elif key in buffer_map:
+                target = buffer_map[key]
+                target.copy_(tensor.to(dtype=target.dtype, device=target.device))
+
+    if missing:
+        print(f"  Missing keys during low-mem load: {len(missing)}")
+    if device != "cpu":
+        model.to(device=device)
+
+
+def _build_wan_model_from_loader(
+    loader: _SafeTensorLoader,
+    device: str,
+    comfyui_root: Optional[str],
+    model_type: str,
+):
+    root = _resolve_comfyui_root(comfyui_root)
+    sys.path.insert(0, str(root))
+
+    from comfy.ldm.wan.model import WanModel
+    import comfy.ops as ops
+
+    keys = loader.keys()
+    block_indices = [
+        int(k.split(".")[1])
+        for k in keys
+        if k.startswith("blocks.") and k.split(".")[1].isdigit()
+    ]
+    num_blocks = (max(block_indices) + 1) if block_indices else 0
+
+    hidden_size = loader.get_tensor("blocks.0.self_attn.q.weight").shape[0]
+    ffn_dim = loader.get_tensor("blocks.0.ffn.0.weight").shape[0]
+    text_dim = loader.get_tensor("text_embedding.0.weight").shape[1]
+    patch_weight = loader.get_tensor("patch_embedding.weight")
+    in_dim = patch_weight.shape[1]
+    head_out = loader.get_tensor("head.head.weight").shape[0]
+    out_dim = head_out // 4
+    patch_size = tuple(int(v) for v in patch_weight.shape[-3:])
+
+    flf_pos_embed_token_number = None
+    if "img_emb.emb_pos" in loader:
+        flf_pos_embed_token_number = int(loader.get_tensor("img_emb.emb_pos").shape[1])
+
+    in_dim_ref_conv = None
+    if "ref_conv.weight" in loader:
+        in_dim_ref_conv = int(loader.get_tensor("ref_conv.weight").shape[1])
+
+    resolved_model_type = {
+        "wan22_5b": "i2v",
+        "wan22_i2v_lownoise": "i2v",
+        "wan22_i2v_highnoise": "i2v",
+        "wan22_t2v_lownoise": "t2v",
+        "wan22_t2v_highnoise": "t2v",
+        "wan21_i2v_480p": "i2v",
+    }[model_type]
+
+    model = WanModel(
+        model_type=resolved_model_type,
+        patch_size=patch_size,
+        in_dim=in_dim,
+        dim=hidden_size,
+        ffn_dim=ffn_dim,
+        text_dim=text_dim,
+        out_dim=out_dim,
+        num_heads=hidden_size // 128,
+        num_layers=num_blocks,
+        flf_pos_embed_token_number=flf_pos_embed_token_number,
+        in_dim_ref_conv=in_dim_ref_conv,
+        dtype=torch.bfloat16,
+        device="cpu",
+        operations=ops.manual_cast,
+    )
+
+    model.eval()
+    return model
+
+
+def _build_qwen_model_from_loader(
+    loader: _SafeTensorLoader,
+    device: str,
+    comfyui_root: Optional[str],
+    model_type: str,
+):
+    root = _resolve_comfyui_root(comfyui_root)
+    sys.path.insert(0, str(root))
+
+    from comfy.ldm.qwen_image.model import QwenImageTransformer2DModel
+    import comfy.ops as ops
+
+    img_in_weight = loader.get_tensor("img_in.weight")
+    inner_dim, in_channels = img_in_weight.shape
+    txt_in_weight = loader.get_tensor("txt_in.weight")
+    joint_attention_dim = txt_in_weight.shape[1]
+
+    norm_q_key = None
+    for key in loader.keys():
+        if key.endswith("attn.norm_q.weight"):
+            norm_q_key = key
+            break
+    if norm_q_key is None:
+        raise KeyError("Missing attn.norm_q.weight in Qwen model")
+
+    attention_head_dim = loader.get_tensor(norm_q_key).shape[0]
+    num_attention_heads = int(inner_dim // attention_head_dim)
+
+    layer_indices = [
+        int(k.split(".")[1])
+        for k in loader.keys()
+        if k.startswith("transformer_blocks.") and k.split(".")[1].isdigit()
+    ]
+    num_layers = (max(layer_indices) + 1) if layer_indices else 0
+
+    proj_out_weight = loader.get_tensor("proj_out.weight") if "proj_out.weight" in loader else None
+    if proj_out_weight is not None and proj_out_weight.ndim == 2:
+        out_features = proj_out_weight.shape[0]
+        patch_size, out_channels = 2, in_channels
+        for ps in (2, 4, 1):
+            denom = ps * ps
+            if out_features % denom == 0:
+                patch_size = ps
+                out_channels = out_features // denom
+                break
+    else:
+        patch_size, out_channels = 2, in_channels
+
+    use_additional_t_cond = "time_text_embed.addition_t_embedding.weight" in loader
+    default_ref_method = "index_timestep_zero" if "__index_timestep_zero__" in loader else "index"
+
+    model = QwenImageTransformer2DModel(
+        patch_size=patch_size,
+        in_channels=int(in_channels),
+        out_channels=int(out_channels),
+        num_layers=num_layers,
+        attention_head_dim=int(attention_head_dim),
+        num_attention_heads=num_attention_heads,
+        joint_attention_dim=int(joint_attention_dim),
+        pooled_projection_dim=768,
+        default_ref_method=default_ref_method,
+        use_additional_t_cond=use_additional_t_cond,
+        dtype=torch.bfloat16,
+        device="cpu",
+        operations=ops.manual_cast,
+    )
+
+    model.eval()
+    return model
+
+
+def _build_model_for_calibration_low_mem(
+    model_path: str,
+    model_type: str,
+    device: str,
+    comfyui_root: Optional[str],
+):
+    loader = _SafeTensorLoader(model_path)
+    try:
+        if model_type in WAN_MODEL_TYPES:
+            model = _build_wan_model_from_loader(loader, device, comfyui_root, model_type)
+        else:
+            model = _build_qwen_model_from_loader(loader, device, comfyui_root, model_type)
+
+        _stream_load_state_dict(model, loader, device)
+        model.eval()
+        return model
+    finally:
+        loader.close()
 
 
 def _to_float8_e4m3(t: torch.Tensor) -> torch.Tensor:
@@ -257,6 +517,11 @@ def main() -> None:
         help="Device for calibration (default: cuda)",
     )
     parser.add_argument(
+        "--low-mem",
+        action="store_true",
+        help="Stream weights from safetensors to reduce peak RAM (supports .safetensors or .safetensors.index.json)",
+    )
+    parser.add_argument(
         "--comfyui-root",
         default=None,
         metavar="PATH",
@@ -310,9 +575,14 @@ def main() -> None:
                 f"max={max(vals):.6f}, mean={(sum(vals)/len(vals)):.6f}"
             )
 
-    model = _build_model_for_calibration(
-        args.fp16_model, args.model_type, args.device, args.comfyui_root
-    )
+    if args.low_mem:
+        model = _build_model_for_calibration_low_mem(
+            args.fp16_model, args.model_type, args.device, args.comfyui_root
+        )
+    else:
+        model = _build_model_for_calibration(
+            args.fp16_model, args.model_type, args.device, args.comfyui_root
+        )
 
     import torch.nn as nn
 
