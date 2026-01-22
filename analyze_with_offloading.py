@@ -92,13 +92,6 @@ class _ProgressReporter:
             f"processing layer {self._layer_index}/{self._layer_total}: {name}"
         )
 
-    def log_layer(self, name: str, elapsed: float, chunked: bool) -> None:
-        if name in self._seen:
-            return
-        self._seen.add(name)
-        suffix = " (chunked)" if chunked else ""
-        print(f"Layer {name} processed in {elapsed:.2f}s{suffix}")
-
 
 class _DiskLinear(torch.nn.Module):
     def __init__(
@@ -140,8 +133,6 @@ class _DiskLinear(torch.nn.Module):
                 w = weight.to(device=target_device, dtype=target_dtype)
                 b = bias.to(device=target_device, dtype=target_dtype) if bias is not None else None
                 out = torch.nn.functional.linear(input, w, b)
-                elapsed = time.time() - start_time
-                self.progress.log_layer(self.layer_name, elapsed, chunked=False)
                 del weight, bias, w, b
                 return out
         except RuntimeError as exc:
@@ -172,8 +163,6 @@ class _DiskLinear(torch.nn.Module):
             del w_chunk, b_chunk, out_chunk
 
         out = torch.cat(outputs, dim=-1)
-        elapsed = time.time() - start_time
-        self.progress.log_layer(self.layer_name, elapsed, chunked=True)
         if target_device.type == "cuda":
             torch.cuda.empty_cache()
         del weight, bias
