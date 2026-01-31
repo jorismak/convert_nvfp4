@@ -2,15 +2,15 @@
 """
 Parse input_scale logs and produce per-layer summary stats.
 
-Input format (tab-separated):
+Primary input format (torch save stream):
+    A sequence of torch-serialized dict records written by ComfyUI.
+    Each record includes per-channel amax (channel axis = last dim) and
+    a global amax for the activation input to a Linear layer.
+
+Legacy input format (tab-separated):
     format\tmode\tlayer\tscale\tamax\tshape
 Example:
     nvfp4\tdynamic\tblocks.0.self_attn.q\t0.008405\t22.593750\t(33440, 3072)
-
-Legacy input format (tab-separated):
-    mode\tlayer\tscale\tamax\tshape
-Example:
-    dynamic\tblocks.0.self_attn.q\t0.008405\t22.593750\t(33440, 3072)
 
 Outputs:
   - CSV summary (per layer)
@@ -25,8 +25,7 @@ Usage:
       --mode dynamic
 
 Compressed inputs:
-    --input can point to .gz, .xz, or .bz2 files. Compression is auto-detected
-    from the file extension (e.g., nvfp4_scales.txt.gz).
+    --input can point to .gz, .xz, or .bz2 files when using legacy text format.
 """
 
 from __future__ import annotations
@@ -40,6 +39,8 @@ import math
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, TextIO
+
+import torch
 
 try:
     import matplotlib.pyplot as plt
@@ -144,6 +145,16 @@ def _open_input_text(path: Path) -> TextIO:
     return path.open("r", encoding="utf-8", errors="replace")
 
 
+def _iter_torch_records(path: Path):
+    with path.open("rb") as f:
+        while True:
+            try:
+                record = torch.load(f, map_location="cpu")
+            except EOFError:
+                break
+            yield record
+
+
 def _write_csv(path: Path, rows: List[Dict[str, object]], fields: List[str]) -> None:
     lines = [",".join(fields)]
     for row in rows:
@@ -194,7 +205,13 @@ def main() -> None:
     parser.add_argument(
         "--input",
         required=True,
-        help="Path to nvfp4_scales.txt (.gz/.xz/.bz2 supported via extension)",
+        help="Path to input_scale log file",
+    )
+    parser.add_argument(
+        "--input-format",
+        choices=["torch", "text"],
+        default="torch",
+        help="Log input format (default: torch). Use 'text' for legacy tab logs.",
     )
     parser.add_argument("--csv", help="Output CSV path (optional)")
     parser.add_argument("--json", required=True, help="Output JSON path")
@@ -244,97 +261,148 @@ def main() -> None:
     if not input_path.exists():
         raise FileNotFoundError(f"Input log not found: {input_path}")
 
-    scale_by_layer: Dict[str, List[float]] = defaultdict(list)
-    amax_by_layer: Dict[str, List[float]] = defaultdict(list)
+    rows: List[Dict[str, object]] = []
+    channel_axis = -1
 
-    with _open_input_text(input_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split("\t")
-            if len(parts) < 5:
-                continue
+    if args.input_format == "torch":
+        channel_by_layer: Dict[str, List[torch.Tensor]] = defaultdict(list)
+        global_by_layer: Dict[str, List[float]] = defaultdict(list)
 
-            # New format: format, mode, layer, scale, amax, shape
-            if len(parts) >= 6:
-                fmt, mode, layer, scale_str, amax_str, _shape = parts[:6]
-                if args.format != "all" and fmt != args.format:
-                    continue
-            else:
-                # Legacy format: mode, layer, scale, amax, shape
-                fmt = "unknown"
-                mode, layer, scale_str, amax_str, _shape = parts[:5]
-                if args.format != "all" and args.format != "nvfp4":
-                    continue
+        for record in _iter_torch_records(input_path):
+            if not isinstance(record, dict):
+                continue
+            fmt = record.get("format", "unknown")
+            mode = record.get("mode", "unknown")
+            if args.format != "all" and fmt != args.format:
+                continue
             if args.mode != "all" and mode != args.mode:
                 continue
-            try:
-                scale = float(scale_str)
-                amax = float(amax_str)
-            except ValueError:
+            layer = record.get("layer")
+            if not layer:
                 continue
-            scale_by_layer[layer].append(scale)
-            amax_by_layer[layer].append(amax)
+            per_channel = record.get("per_channel_amax")
+            if not isinstance(per_channel, torch.Tensor):
+                continue
 
-    rows: List[Dict[str, object]] = []
+            per_channel = per_channel.to(dtype=torch.float32, device="cpu")
+            channel_by_layer[layer].append(per_channel)
 
-    for layer in sorted(scale_by_layer.keys()):
-        scales = scale_by_layer[layer]
-        amaxes = amax_by_layer.get(layer, [])
-        scales_sorted = sorted(scales)
-        amax_sorted = sorted(amaxes)
+            global_val = record.get("global_amax")
+            if global_val is None:
+                global_val = float(per_channel.max().item())
+            global_by_layer[layer].append(float(global_val))
 
-        row: Dict[str, object] = {
-            "layer": layer,
-            "count": len(scales_sorted),
-            "scale_min": scales_sorted[0],
-            "scale_max": scales_sorted[-1],
-            "scale_mean": sum(scales_sorted) / len(scales_sorted),
-            "scale_std": _stddev(scales_sorted),
-            "scale_kurtosis": _kurtosis(scales_sorted),
-            "scale_outlier_frac_3std": _outlier_frac(scales_sorted, 3.0),
-        }
-        for pct in args.percentiles:
-            row[f"scale_p{_pct_key(pct)}"] = _percentile(scales_sorted, pct)
+            if "channel_axis" in record:
+                try:
+                    channel_axis = int(record.get("channel_axis", channel_axis))
+                except Exception:
+                    pass
 
-        if amax_sorted:
-            row.update(
-                {
-                    "amax_min": amax_sorted[0],
-                    "amax_max": amax_sorted[-1],
-                    "amax_mean": sum(amax_sorted) / len(amax_sorted),
-                    "amax_std": _stddev(amax_sorted),
-                    "amax_kurtosis": _kurtosis(amax_sorted),
-                    "amax_outlier_frac_3std": _outlier_frac(amax_sorted, 3.0),
-                }
-            )
+        for layer in sorted(channel_by_layer.keys()):
+            channel_stack = torch.stack(channel_by_layer[layer], dim=0)
+            count = int(channel_stack.shape[0])
+
+            channel_mean = channel_stack.mean(dim=0)
+            if count > 1:
+                channel_std = channel_stack.std(dim=0, unbiased=False)
+            else:
+                channel_std = torch.zeros_like(channel_mean)
+            channel_max = channel_stack.max(dim=0).values
+
+            row: Dict[str, object] = {
+                "layer": layer,
+                "count": count,
+                "channel_axis": channel_axis,
+                "channel_amax_mean": channel_mean.tolist(),
+                "channel_amax_std": channel_std.tolist(),
+                "channel_amax_max": channel_max.tolist(),
+            }
+
             for pct in args.percentiles:
-                row[f"amax_p{_pct_key(pct)}"] = _percentile(amax_sorted, pct)
+                q = torch.quantile(channel_stack, pct / 100.0, dim=0)
+                row[f"channel_amax_p{_pct_key(pct)}"] = q.tolist()
 
-        rows.append(row)
+            global_vals = sorted(global_by_layer.get(layer, []))
+            if global_vals:
+                row.update(
+                    {
+                        "global_amax_min": global_vals[0],
+                        "global_amax_max": global_vals[-1],
+                        "global_amax_mean": sum(global_vals) / len(global_vals),
+                        "global_amax_std": _stddev(global_vals),
+                        "global_amax_kurtosis": _kurtosis(global_vals),
+                        "global_amax_outlier_frac_3std": _outlier_frac(global_vals, 3.0),
+                    }
+                )
+                for pct in args.percentiles:
+                    row[f"global_amax_p{_pct_key(pct)}"] = _percentile(global_vals, pct)
 
-    # Write CSV
+            rows.append(row)
+
+    else:
+        amax_by_layer: Dict[str, List[float]] = defaultdict(list)
+        with _open_input_text(input_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 5:
+                    continue
+
+                if len(parts) >= 6:
+                    fmt, mode, layer, _scale_str, amax_str, _shape = parts[:6]
+                    if args.format != "all" and fmt != args.format:
+                        continue
+                else:
+                    fmt = "unknown"
+                    mode, layer, _scale_str, amax_str, _shape = parts[:5]
+                    if args.format != "all" and args.format != "nvfp4":
+                        continue
+                if args.mode != "all" and mode != args.mode:
+                    continue
+                try:
+                    amax = float(amax_str)
+                except ValueError:
+                    continue
+                amax_by_layer[layer].append(amax)
+
+        for layer in sorted(amax_by_layer.keys()):
+            global_vals = sorted(amax_by_layer[layer])
+            row = {
+                "layer": layer,
+                "count": len(global_vals),
+                "channel_axis": channel_axis,
+                "channel_amax_mean": [],
+                "channel_amax_std": [],
+                "channel_amax_max": [],
+            }
+            if global_vals:
+                row.update(
+                    {
+                        "global_amax_min": global_vals[0],
+                        "global_amax_max": global_vals[-1],
+                        "global_amax_mean": sum(global_vals) / len(global_vals),
+                        "global_amax_std": _stddev(global_vals),
+                        "global_amax_kurtosis": _kurtosis(global_vals),
+                        "global_amax_outlier_frac_3std": _outlier_frac(global_vals, 3.0),
+                    }
+                )
+                for pct in args.percentiles:
+                    row[f"global_amax_p{_pct_key(pct)}"] = _percentile(global_vals, pct)
+            rows.append(row)
+
+    # Write CSV (global stats only)
     fields = [
         "layer",
         "count",
-        "scale_min",
-        "scale_max",
-        "scale_mean",
-        "scale_std",
-        "scale_kurtosis",
-        "scale_outlier_frac_3std",
-    ] + [f"scale_p{_pct_key(p)}" for p in args.percentiles]
-
-    if rows and "amax_min" in rows[0]:
-        fields += [
-            "amax_min",
-            "amax_max",
-            "amax_mean",
-            "amax_std",
-            "amax_kurtosis",
-            "amax_outlier_frac_3std",
-        ] + [f"amax_p{_pct_key(p)}" for p in args.percentiles]
+        "global_amax_min",
+        "global_amax_max",
+        "global_amax_mean",
+        "global_amax_std",
+        "global_amax_kurtosis",
+        "global_amax_outlier_frac_3std",
+    ] + [f"global_amax_p{_pct_key(p)}" for p in args.percentiles]
 
     if args.csv:
         _write_csv(Path(args.csv), rows, fields)
@@ -343,7 +411,9 @@ def main() -> None:
     json_out = {
         "format": args.format,
         "mode": args.mode,
+        "input_format": args.input_format,
         "percentiles": args.percentiles,
+        "channel_axis": channel_axis,
         "layers": rows,
     }
     Path(args.json).write_text(json.dumps(json_out, indent=2), encoding="utf-8")
@@ -356,22 +426,22 @@ def main() -> None:
         kurtosis_values: List[float] = []
         outlier_values: List[float] = []
         for row in rows:
-            mean = float(row.get("scale_mean", float("nan")))
-            std = float(row.get("scale_std", float("nan")))
+            mean = float(row.get("global_amax_mean", float("nan")))
+            std = float(row.get("global_amax_std", float("nan")))
             if mean != 0 and math.isfinite(mean) and math.isfinite(std):
                 scale_cv_values.append(std / mean)
 
-            kurt = row.get("scale_kurtosis")
+            kurt = row.get("global_amax_kurtosis")
             if isinstance(kurt, (int, float)) and math.isfinite(kurt):
                 kurtosis_values.append(float(kurt))
 
-            outlier = row.get("scale_outlier_frac_3std")
+            outlier = row.get("global_amax_outlier_frac_3std")
             if isinstance(outlier, (int, float)) and math.isfinite(outlier):
                 outlier_values.append(float(outlier))
 
         _plot_histogram(
             scale_cv_values,
-            "scale_cv",
+            "global_amax_cv",
             plots_dir / f"scale_cv_hist_{bins}.png",
             bins,
         )
