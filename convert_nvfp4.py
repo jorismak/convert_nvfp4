@@ -2351,7 +2351,7 @@ def convert_to_nvfp4(
         scale = (act ** smoothquant_alpha) / (denom ** (1.0 - smoothquant_alpha))
         scale = torch.clamp(scale, min=1e-8)
 
-        weight_device = weight_device / scale
+        weight_device = weight_device * scale
         return weight_device, scale
 
     selected_full_precision_layers: List[str] = []
@@ -2530,7 +2530,7 @@ def convert_to_nvfp4(
                                     if layer in input_scale_map:
                                         input_scale_map[layer] = (
                                             input_scale_map[layer]
-                                            * smoothquant_scale.detach().cpu()
+                                            / smoothquant_scale.detach().cpu()
                                         )
                                     else:
                                         act_amax = summary_act_amax_by_layer.get(layer)
@@ -2544,7 +2544,7 @@ def convert_to_nvfp4(
                                             base = act_amax / (F8_E4M3_MAX * clip_value)
                                             base = base * input_scale_summary_multiplier
                                             input_scale_map[layer] = (
-                                                base * smoothquant_scale.detach().cpu()
+                                                base / smoothquant_scale.detach().cpu()
                                             )
                             try:
                                 if use_ck_quant and ck is not None:
@@ -2783,7 +2783,7 @@ def convert_to_nvfp4(
             if smoothquant_scale is not None and add_input_scale:
                 if layer in input_scale_map:
                     input_scale_map[layer] = (
-                        input_scale_map[layer] * smoothquant_scale.detach().cpu()
+                        input_scale_map[layer] / smoothquant_scale.detach().cpu()
                     )
                 else:
                     act_amax = summary_act_amax_by_layer.get(layer)
@@ -2794,7 +2794,7 @@ def convert_to_nvfp4(
                             clip_value = float(input_scale_clip)
                         base = act_amax / (F8_E4M3_MAX * clip_value)
                         base = base * input_scale_summary_multiplier
-                        input_scale_map[layer] = base * smoothquant_scale.detach().cpu()
+                        input_scale_map[layer] = base / smoothquant_scale.detach().cpu()
 
         # Quantize (internally converts to FP32 for precise quantization math)
         try:
