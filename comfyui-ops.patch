@@ -1,8 +1,8 @@
 diff --git a/comfy/ops.py b/comfy/ops.py
-index e406ba7e..8eca0769 100644
+index e406ba7e..78eabb9b 100644
 --- a/comfy/ops.py
 +++ b/comfy/ops.py
-@@ -18,6 +18,7 @@
+@@ -18,9 +18,21 @@
  
  import torch
  import logging
@@ -10,7 +10,21 @@ index e406ba7e..8eca0769 100644
  import comfy.model_management
  from comfy.cli_args import args, PerformanceFeature
  import comfy.float
-@@ -545,6 +546,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
++
++_nfp4_log_enabled = False
++
++
++def set_nfp4_log_enabled(enabled: bool) -> None:
++    global _nfp4_log_enabled
++    _nfp4_log_enabled = bool(enabled)
++
++
++def get_nfp4_log_enabled() -> bool:
++    return _nfp4_log_enabled
+ import comfy.rmsnorm
+ import json
+ 
+@@ -545,6 +557,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
  
                  device = self.factory_kwargs["device"]
                  layer_name = prefix.rstrip('.')
@@ -18,7 +32,7 @@ index e406ba7e..8eca0769 100644
                  weight_key = f"{prefix}weight"
                  weight = state_dict.pop(weight_key, None)
                  if weight is None:
-@@ -667,14 +669,53 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
+@@ -667,14 +680,54 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
                  input_shape = input.shape
                  reshaped_3d = False
  
@@ -30,7 +44,8 @@ index e406ba7e..8eca0769 100644
 +                    if scale is not None:
 +                        scale = comfy.model_management.cast_to_device(scale, input.device, None)
 +                    log_path = os.getenv("COMFY_NFP4_LOG_INPUT_SCALE_PATH", "")
-+                    if log_path:
++                    log_always = os.getenv("COMFY_NFP4_LOG_ALWAYS", "")
++                    if log_path and (log_always or get_nfp4_log_enabled()):
 +                        try:
 +                            layer = getattr(self, "_quant_layer_name", "<unknown>")
 +                            fmt = getattr(self, "quant_format", "unknown")
