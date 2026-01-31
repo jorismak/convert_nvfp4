@@ -86,6 +86,39 @@ F4_E2M1_MAX = 6.0  # Maximum value representable in FP4 E2M1
 F8_E4M3_MAX = 448.0  # Maximum value representable in FP8 E4M3
 NVFP4_BLOCK_SIZE = 16  # Number of values per quantization block
 
+
+def _pct_key(pct: float) -> str:
+    pct_str = str(pct).rstrip("0").rstrip(".")
+    return pct_str.replace(".", "_")
+
+
+def _select_clip_value(
+    row: Dict,
+    pct_key: str,
+    ratio_threshold: float = 1.5,
+    frac_threshold: float = 0.1,
+) -> float:
+    channel_max = row.get("channel_amax_max")
+    channel_pct = row.get(f"channel_amax_p{pct_key}")
+    if isinstance(channel_max, list) and isinstance(channel_pct, list):
+        if len(channel_max) == len(channel_pct) and len(channel_max) > 0:
+            hits = 0
+            for max_val, pct_val in zip(channel_max, channel_pct):
+                denom = max(float(pct_val), 1e-12)
+                if float(max_val) / denom > ratio_threshold:
+                    hits += 1
+            frac = hits / len(channel_max)
+            return 4.0 if frac >= frac_threshold else 6.0
+
+    global_max = row.get("global_amax_max")
+    global_pct = row.get(f"global_amax_p{pct_key}")
+    if isinstance(global_max, (int, float)) and isinstance(global_pct, (int, float)):
+        denom = max(float(global_pct), 1e-12)
+        ratio = float(global_max) / denom
+        return 4.0 if ratio > ratio_threshold else 6.0
+
+    return 6.0
+
 # Patterns for "safe" mode - layers to skip
 SAFE_MODE_SKIP_PATTERNS = [
     r".*\.head\..*",  # Output projection heads
@@ -1531,6 +1564,9 @@ def build_output_metadata(
     input_scale_summary_json: Optional[str],
     input_scale_summary_percentile: float,
     input_scale_summary_multiplier: float,
+    input_scale_clip: str,
+    smoothquant: bool,
+    smoothquant_alpha: float,
     sensitivity_json: Optional[str],
     sensitivity_threshold: Optional[float],
     sensitivity_action: str,
@@ -1580,6 +1616,9 @@ def build_output_metadata(
         output_metadata["nvfp4_input_scale_summary_multiplier"] = str(
             input_scale_summary_multiplier
         )
+    output_metadata["nvfp4_input_scale_clip"] = str(input_scale_clip)
+    output_metadata["nvfp4_smoothquant"] = str(bool(smoothquant))
+    output_metadata["nvfp4_smoothquant_alpha"] = str(smoothquant_alpha)
     if sensitivity_json and sensitivity_threshold is not None:
         output_metadata["nvfp4_sensitivity_json"] = str(sensitivity_json)
         output_metadata["nvfp4_sensitivity_threshold"] = str(sensitivity_threshold)
@@ -1643,6 +1682,9 @@ def convert_to_nvfp4(
     input_scale_summary_json: Optional[str] = None,
     input_scale_summary_percentile: float = 99.0,
     input_scale_summary_multiplier: float = 1.0,
+    input_scale_clip: str = "6",
+    smoothquant: bool = False,
+    smoothquant_alpha: float = 0.5,
     input_scale_summary_fp16_std: bool = False,
     input_scale_summary_std_threshold: Optional[float] = None,
     input_scale_summary_cv_threshold: Optional[float] = 0.4,
@@ -1698,6 +1740,9 @@ def convert_to_nvfp4(
         input_scale_summary_json: Optional summary JSON from analyze_input_scale_log.py
         input_scale_summary_percentile: Percentile to use from summary JSON
         input_scale_summary_multiplier: Multiplier applied to summary scales
+        input_scale_clip: Activation clip max for input_scale ("4", "6", or "auto")
+        smoothquant: Enable SmoothQuant activation/weight equalization
+        smoothquant_alpha: SmoothQuant alpha (0..1)
         input_scale_summary_fp16_std: If True, move high-variance layers to FP16/BF16
         input_scale_summary_std_threshold: Absolute scale_std threshold for FP16/BF16
         input_scale_summary_cv_threshold: Relative scale_std/scale_mean threshold for FP16/BF16
@@ -1753,6 +1798,10 @@ def convert_to_nvfp4(
         raise ValueError("--model-type is required when using --calibrate-from-fp16")
     if input_scale_summary_multiplier <= 0:
         raise ValueError("--input-scale-summary-multiplier must be > 0")
+    if input_scale_clip not in {"4", "6", "auto"}:
+        raise ValueError("--input-scale-clip must be one of: 4, 6, auto")
+    if smoothquant_alpha < 0 or smoothquant_alpha > 1:
+        raise ValueError("--smoothquant-alpha must be in [0, 1]")
     if input_scale_summary_std_threshold is not None and input_scale_summary_std_threshold <= 0:
         raise ValueError("--input-scale-summary-std-threshold must be > 0")
     if input_scale_summary_cv_threshold is not None and input_scale_summary_cv_threshold <= 0:
@@ -1773,6 +1822,9 @@ def convert_to_nvfp4(
 
     input_scale_map: Dict[str, torch.Tensor] = {}
     input_scale_source: Dict[str, str] = {}
+    summary_rows_by_layer: Dict[str, Dict] = {}
+    summary_act_amax_by_layer: Dict[str, torch.Tensor] = {}
+    summary_clip_by_layer: Dict[str, float] = {}
 
     ck = None
     if use_ck_quant:
@@ -2071,36 +2123,61 @@ def convert_to_nvfp4(
                 f"Input scale summary not found: {input_scale_summary_json}"
             )
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        pct_str = str(input_scale_summary_percentile).rstrip("0").rstrip(".")
-        pct_str = pct_str.replace(".", "_")
-        percentile_key = f"scale_p{pct_str}"
+        pct_str = _pct_key(input_scale_summary_percentile)
+        global_key = f"global_amax_p{pct_str}"
+        channel_key = f"channel_amax_p{pct_str}"
         summary_layers = summary.get("layers", [])
         summary_map: Dict[str, torch.Tensor] = {}
-        summary_rows_by_layer: Dict[str, Dict] = {}
+
         for row in summary_layers:
             layer = row.get("layer")
             if not layer:
                 continue
             summary_rows_by_layer[layer] = row
-            if percentile_key in row:
-                val = float(row[percentile_key])
-            elif "scale_max" in row:
-                val = float(row["scale_max"])
-            elif "scale_mean" in row:
-                val = float(row["scale_mean"])
+
+            if input_scale_clip == "auto":
+                clip_value = _select_clip_value(row, pct_str)
             else:
+                clip_value = float(input_scale_clip)
+            summary_clip_by_layer[layer] = clip_value
+
+            channel_vals = row.get(channel_key)
+            if isinstance(channel_vals, list) and channel_vals:
+                act_amax = torch.tensor(channel_vals, dtype=torch.float32)
+                scale = act_amax / (F8_E4M3_MAX * clip_value)
+                scale = scale * input_scale_summary_multiplier
+                summary_map[layer] = scale
+                summary_act_amax_by_layer[layer] = act_amax
+                input_scale_source[layer] = f"summary-channel-clip{clip_value:g}"
                 continue
-            val *= input_scale_summary_multiplier
-            summary_map[layer] = torch.tensor([val], dtype=torch.float32)
+
+            global_val = row.get(global_key)
+            if global_val is None:
+                global_val = row.get("global_amax_max")
+            if global_val is None:
+                global_val = row.get("global_amax_mean")
+            if global_val is None:
+                continue
+            val = float(global_val)
+            scale_val = val / (F8_E4M3_MAX * clip_value)
+            scale_val *= input_scale_summary_multiplier
+            summary_map[layer] = torch.tensor([scale_val], dtype=torch.float32)
+            summary_act_amax_by_layer[layer] = torch.tensor([val], dtype=torch.float32)
+            input_scale_source[layer] = f"summary-global-clip{clip_value:g}"
+
         input_scale_map = summary_map
         if input_scale_map:
-            vals = [float(v.item()) for v in input_scale_map.values()]
+            vals = []
+            for v in input_scale_map.values():
+                if v.numel() == 1:
+                    vals.append(float(v.item()))
+                else:
+                    vals.append(float(v.mean().item()))
             print(
-                f"Input scale summary ({percentile_key}, x{input_scale_summary_multiplier}): "
+                f"Input scale summary ({pct_str}, clip={input_scale_clip}, x{input_scale_summary_multiplier}): "
                 f"count={len(vals)}, min={min(vals):.6f}, max={max(vals):.6f}, "
                 f"mean={(sum(vals)/len(vals)):.6f}"
             )
-            input_scale_source = {k: "summary" for k in input_scale_map.keys()}
 
         if input_scale_summary_fp16_std:
             if not summary_rows_by_layer:
@@ -2110,7 +2187,14 @@ def convert_to_nvfp4(
                     std_vals = []
                     for row in summary_rows_by_layer.values():
                         try:
-                            v = float(row.get("scale_std"))
+                            layer_name = row.get("layer")
+                            clip_value = summary_clip_by_layer.get(
+                                layer_name,
+                                float(input_scale_clip) if input_scale_clip != "auto" else 6.0,
+                            )
+                            denom = F8_E4M3_MAX * clip_value
+                            v = float(row.get("global_amax_std")) / denom
+                            v *= input_scale_summary_multiplier
                         except Exception:
                             continue
                         if v > 0:
@@ -2125,12 +2209,19 @@ def convert_to_nvfp4(
                 flagged_layers: List[str] = []
                 for layer, row in summary_rows_by_layer.items():
                     try:
-                        scale_std = row.get("scale_std")
-                        scale_mean = row.get("scale_mean")
+                        clip_value = summary_clip_by_layer.get(
+                            layer,
+                            float(input_scale_clip) if input_scale_clip != "auto" else 6.0,
+                        )
+                        denom = F8_E4M3_MAX * clip_value
+                        scale_std = row.get("global_amax_std")
+                        scale_mean = row.get("global_amax_mean")
                         if scale_std is None or scale_mean is None:
                             continue
-                        scale_std = float(scale_std)
-                        scale_mean = float(scale_mean)
+                        scale_std = float(scale_std) / denom
+                        scale_mean = float(scale_mean) / denom
+                        scale_std *= input_scale_summary_multiplier
+                        scale_mean *= input_scale_summary_multiplier
                     except Exception:
                         continue
 
@@ -2232,6 +2323,36 @@ def convert_to_nvfp4(
             if rgx.search(layer_name):
                 return True
         return False
+
+    smoothquant_warned = False
+
+    def _apply_smoothquant(layer_name: str, weight_device: torch.Tensor):
+        nonlocal smoothquant_warned
+        if not smoothquant:
+            return weight_device, None
+        act_amax = summary_act_amax_by_layer.get(layer_name)
+        if act_amax is None or act_amax.numel() == 0:
+            if not smoothquant_warned:
+                print("Warning: SmoothQuant enabled but no per-channel activation stats found.")
+                smoothquant_warned = True
+            return weight_device, None
+
+        act = act_amax.to(device=weight_device.device, dtype=weight_device.dtype)
+        weight_amax = weight_device.abs().amax(dim=0)
+        if act.numel() != weight_amax.numel():
+            if not smoothquant_warned:
+                print(
+                    "Warning: SmoothQuant activation/weight channel mismatch; skipping for some layers."
+                )
+                smoothquant_warned = True
+            return weight_device, None
+
+        denom = torch.clamp(weight_amax, min=1e-12)
+        scale = (act ** smoothquant_alpha) / (denom ** (1.0 - smoothquant_alpha))
+        scale = torch.clamp(scale, min=1e-8)
+
+        weight_device = weight_device / scale
+        return weight_device, scale
 
     selected_full_precision_layers: List[str] = []
     if not full_precision_mm and (full_precision_mm_layer_set or full_precision_mm_regexes):
@@ -2400,9 +2521,34 @@ def convert_to_nvfp4(
 
                         if layer in quantize_layers:
                             weight_device = weight.to(device=device, dtype=quantize_input_dtype)
+                            smoothquant_scale = None
+                            if smoothquant:
+                                weight_device, smoothquant_scale = _apply_smoothquant(
+                                    layer, weight_device
+                                )
+                                if smoothquant_scale is not None and add_input_scale:
+                                    if layer in input_scale_map:
+                                        input_scale_map[layer] = (
+                                            input_scale_map[layer]
+                                            * smoothquant_scale.detach().cpu()
+                                        )
+                                    else:
+                                        act_amax = summary_act_amax_by_layer.get(layer)
+                                        if act_amax is not None:
+                                            if input_scale_clip == "auto":
+                                                clip_value = summary_clip_by_layer.get(
+                                                    layer, 6.0
+                                                )
+                                            else:
+                                                clip_value = float(input_scale_clip)
+                                            base = act_amax / (F8_E4M3_MAX * clip_value)
+                                            base = base * input_scale_summary_multiplier
+                                            input_scale_map[layer] = (
+                                                base * smoothquant_scale.detach().cpu()
+                                            )
                             try:
                                 if use_ck_quant and ck is not None:
-                                    tensor_scale = torch.amax(weight.float().abs()) / (
+                                    tensor_scale = torch.amax(weight_device.float().abs()) / (
                                         F8_E4M3_MAX * F4_E2M1_MAX
                                     )
                                     tensor_scale = tensor_scale.to(torch.float32)
@@ -2556,6 +2702,9 @@ def convert_to_nvfp4(
             input_scale_summary_json,
             input_scale_summary_percentile,
             input_scale_summary_multiplier,
+            input_scale_clip,
+            smoothquant,
+            smoothquant_alpha,
             sensitivity_json,
             sensitivity_threshold,
             sensitivity_action,
@@ -2628,11 +2777,30 @@ def convert_to_nvfp4(
         # quantization backend expects and produces compatible results
         weight_device = weight.to(device=device, dtype=quantize_input_dtype)
 
+        smoothquant_scale = None
+        if smoothquant:
+            weight_device, smoothquant_scale = _apply_smoothquant(layer, weight_device)
+            if smoothquant_scale is not None and add_input_scale:
+                if layer in input_scale_map:
+                    input_scale_map[layer] = (
+                        input_scale_map[layer] * smoothquant_scale.detach().cpu()
+                    )
+                else:
+                    act_amax = summary_act_amax_by_layer.get(layer)
+                    if act_amax is not None:
+                        if input_scale_clip == "auto":
+                            clip_value = summary_clip_by_layer.get(layer, 6.0)
+                        else:
+                            clip_value = float(input_scale_clip)
+                        base = act_amax / (F8_E4M3_MAX * clip_value)
+                        base = base * input_scale_summary_multiplier
+                        input_scale_map[layer] = base * smoothquant_scale.detach().cpu()
+
         # Quantize (internally converts to FP32 for precise quantization math)
         try:
             if use_ck_quant and ck is not None:
                 # Compute per-tensor scale in FP32 for accuracy
-                tensor_scale = torch.amax(weight.float().abs()) / (
+                tensor_scale = torch.amax(weight_device.float().abs()) / (
                     F8_E4M3_MAX * F4_E2M1_MAX
                 )
                 tensor_scale = tensor_scale.to(torch.float32)
@@ -2795,6 +2963,9 @@ def convert_to_nvfp4(
         input_scale_summary_json,
         input_scale_summary_percentile,
         input_scale_summary_multiplier,
+        input_scale_clip,
+        smoothquant,
+        smoothquant_alpha,
         sensitivity_json,
         sensitivity_threshold,
         sensitivity_action,
@@ -2817,11 +2988,17 @@ def convert_to_nvfp4(
         for layer in sorted(quantize_layers):
             key = f"{layer}.input_scale"
             if key in output_tensors:
+                tensor = output_tensors[key]
                 try:
-                    val = float(output_tensors[key].item())
+                    if tensor.numel() == 1:
+                        val = float(tensor.item())
+                        print(f"  {layer}: {val:.6f}")
+                    else:
+                        val = float(tensor.mean().item())
+                        print(f"  {layer}: mean={val:.6f} (len={tensor.numel()})")
                 except Exception:
-                    val = float(output_tensors[key].mean().item())
-                print(f"  {layer}: {val:.6f}")
+                    val = float(tensor.mean().item())
+                    print(f"  {layer}: mean={val:.6f}")
 
     # Print summary
     print("\n" + "=" * 50)
@@ -3185,6 +3362,23 @@ Supported models:
         help="Multiplier applied to summary-derived input_scale values (default: 1.0)",
     )
     summary_group.add_argument(
+        "--input-scale-clip",
+        choices=["4", "6", "auto"],
+        default="6",
+        help="Activation clip max for input_scale (4, 6, or auto for 4-over-6)",
+    )
+    summary_group.add_argument(
+        "--smoothquant",
+        action="store_true",
+        help="Enable SmoothQuant activation/weight equalization using per-channel stats",
+    )
+    summary_group.add_argument(
+        "--smoothquant-alpha",
+        type=float,
+        default=0.5,
+        help="SmoothQuant alpha (0..1, default: 0.5)",
+    )
+    summary_group.add_argument(
         "--input-scale-summary-fp16-std",
         action="store_true",
         help="Move high-variance layers to FP16/BF16 based on summary stats",
@@ -3326,6 +3520,9 @@ Supported models:
             input_scale_summary_json=args.input_scale_summary_json,
             input_scale_summary_percentile=args.input_scale_summary_percentile,
             input_scale_summary_multiplier=args.input_scale_summary_multiplier,
+            input_scale_clip=args.input_scale_clip,
+            smoothquant=args.smoothquant,
+            smoothquant_alpha=args.smoothquant_alpha,
             input_scale_summary_fp16_std=args.input_scale_summary_fp16_std,
             input_scale_summary_std_threshold=args.input_scale_summary_std_threshold,
             input_scale_summary_cv_threshold=args.input_scale_summary_cv_threshold,
