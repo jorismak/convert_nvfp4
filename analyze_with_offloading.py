@@ -797,8 +797,36 @@ def _pct_key(pct: float) -> str:
     return pct_str.replace(".", "_")
 
 
+def _select_clip_value(
+    row: Dict,
+    pct_key: str,
+    ratio_threshold: float = 1.5,
+    frac_threshold: float = 0.1,
+) -> float:
+    channel_max = row.get("channel_amax_max")
+    channel_pct = row.get(f"channel_amax_p{pct_key}")
+    if isinstance(channel_max, list) and isinstance(channel_pct, list):
+        if len(channel_max) == len(channel_pct) and len(channel_max) > 0:
+            hits = 0
+            for max_val, pct_val in zip(channel_max, channel_pct):
+                denom = max(float(pct_val), 1e-12)
+                if float(max_val) / denom > ratio_threshold:
+                    hits += 1
+            frac = hits / len(channel_max)
+            return 4.0 if frac >= frac_threshold else 6.0
+
+    global_max = row.get("global_amax_max")
+    global_pct = row.get(f"global_amax_p{pct_key}")
+    if isinstance(global_max, (int, float)) and isinstance(global_pct, (int, float)):
+        denom = max(float(global_pct), 1e-12)
+        ratio = float(global_max) / denom
+        return 4.0 if ratio > ratio_threshold else 6.0
+
+    return 6.0
+
+
 def _load_summary_scales(
-    path: str, percentile: float, multiplier: float, clip: float
+    path: str, percentile: float, multiplier: float, clip: str
 ) -> Dict[str, float]:
     summary = json.loads(Path(path).read_text(encoding="utf-8"))
     pct_key = _pct_key(percentile)
@@ -809,18 +837,23 @@ def _load_summary_scales(
         layer = row.get("layer")
         if not layer:
             continue
+        if clip == "auto":
+            clip_value = _select_clip_value(row, pct_key)
+        else:
+            clip_value = float(clip)
+
         if channel_key in row and isinstance(row[channel_key], list):
             vals = [float(v) for v in row[channel_key] if v is not None]
             if not vals:
                 continue
             amax = sum(vals) / len(vals)
-            scale = amax / (F8_E4M3_MAX * clip)
+            scale = amax / (F8_E4M3_MAX * clip_value)
         elif global_key in row:
             amax = float(row[global_key])
-            scale = amax / (F8_E4M3_MAX * clip)
+            scale = amax / (F8_E4M3_MAX * clip_value)
         elif "global_amax_max" in row:
             amax = float(row["global_amax_max"])
-            scale = amax / (F8_E4M3_MAX * clip)
+            scale = amax / (F8_E4M3_MAX * clip_value)
         elif "scale_max" in row:
             scale = float(row["scale_max"])
         elif "scale_mean" in row:
@@ -900,7 +933,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--input-scale-clip",
-        choices=["4", "6"],
+        choices=["4", "6", "auto"],
         default="6",
         help="Activation clip max for input_scale (4 or 6, default: 6)",
     )
@@ -968,7 +1001,7 @@ def main() -> None:
             args.input_scale_summary_json,
             args.input_scale_summary_percentile,
             args.input_scale_summary_multiplier,
-            float(args.input_scale_clip),
+            args.input_scale_clip,
         )
         if input_scale_map:
             vals = list(input_scale_map.values())
