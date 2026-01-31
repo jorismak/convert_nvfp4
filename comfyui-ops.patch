@@ -1,3 +1,20 @@
+diff --git a/comfy/model_base.py b/comfy/model_base.py
+index 66e52864..4bb69bc0 100644
+--- a/comfy/model_base.py
++++ b/comfy/model_base.py
+@@ -203,7 +203,11 @@ class BaseModel(torch.nn.Module):
+         if "latent_shapes" in extra_conds:
+             xc = utils.unpack_latents(xc, extra_conds.pop("latent_shapes"))
+ 
+-        model_output = self.diffusion_model(xc, t, context=context, control=control, transformer_options=transformer_options, **extra_conds)
++        comfy.ops.set_nfp4_log_enabled(True)
++        try:
++            model_output = self.diffusion_model(xc, t, context=context, control=control, transformer_options=transformer_options, **extra_conds)
++        finally:
++            comfy.ops.set_nfp4_log_enabled(False)
+         if len(model_output) > 1 and not torch.is_tensor(model_output):
+             model_output, _ = utils.pack_latents(model_output)
+ 
 diff --git a/comfy/ops.py b/comfy/ops.py
 index e406ba7e..78eabb9b 100644
 --- a/comfy/ops.py
@@ -90,28 +107,3 @@ index e406ba7e..78eabb9b 100644
                      # Fall back to non-quantized for non-2D tensors
                      if input_reshaped.ndim == 2:
                          reshaped_3d = input.ndim == 3
-diff --git a/comfy/samplers.py b/comfy/samplers.py
-index 1989ef10..f272f1ed 100755
---- a/comfy/samplers.py
-+++ b/comfy/samplers.py
-@@ -13,6 +13,7 @@ from comfy import model_management
- import math
- import logging
- import comfy.sampler_helpers
-+import comfy.ops
- import comfy.model_patcher
- import comfy.patcher_extension
- import comfy.hooks
-@@ -1065,7 +1066,11 @@ def sample(model, noise, positive, negative, cfg, device, sampler, sigmas, model
-     cfg_guider = CFGGuider(model)
-     cfg_guider.set_conds(positive, negative)
-     cfg_guider.set_cfg(cfg)
--    return cfg_guider.sample(noise, latent_image, sampler, sigmas, denoise_mask, callback, disable_pbar, seed)
-+    comfy.ops.set_nfp4_log_enabled(True)
-+    try:
-+        return cfg_guider.sample(noise, latent_image, sampler, sigmas, denoise_mask, callback, disable_pbar, seed)
-+    finally:
-+        comfy.ops.set_nfp4_log_enabled(False)
- 
- 
- SAMPLER_NAMES = KSAMPLER_NAMES + ["ddim", "uni_pc", "uni_pc_bh2"]
