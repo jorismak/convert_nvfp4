@@ -100,6 +100,45 @@ User tests them in ComfyUI after conversion.
 - We suspect a **scaling, metadata, or compatibility issue**
 - Something about how the model is loaded/interpreted in ComfyUI
 
+## Activation Quality Improvements (Current Focus)
+
+We want to improve **activation quantization quality** (weights already improved via mixed presets). The output is still too noisy, so the focus is on activation scaling.
+
+### SmoothQuant (Desired)
+
+Use **SmoothQuant** to shift scale from activations into weights, reducing activation outliers and improving NVFP4 precision. The goal is to compute a per-channel scale vector from activation statistics and apply it during conversion.
+
+### 4-over-6 (Desired)
+
+Use a **4-over-6** activation clip strategy: compute input scales assuming max clip at 4 and at 6, and select the better of the two (auto selection based on per-channel stats). This should improve precision in low/mid ranges without excessive clipping.
+
+### Data Needed
+
+To support SmoothQuant and 4-over-6, we need **per-activation, per-layer, per-channel** statistics:
+- Per-layer global amax
+- Per-channel amax vector (channel axis = last dim)
+- Input scale (if provided)
+- Shape metadata
+
+This data is now logged from ComfyUI during diffusion runs.
+
+### ComfyUI Logging (Binary Format)
+
+ComfyUI now logs per-activation data as **binary torch records** (append-only) when logging is enabled. Each record contains:
+- `format`: quant format string (or `unknown` in FP16)
+- `mode`: `provided` or `dynamic`
+- `layer`: layer name
+- `shape`: input activation shape
+- `global_amax`: scalar
+- `per_channel_amax`: vector (float32)
+- `input_scale`: scalar or None
+- `channel_axis`: -1
+
+Logging is gated by:
+- `COMFY_NFP4_LOG_INPUT_SCALE_PATH`: log file path
+- `COMFY_NFP4_LOG_ALWAYS=1`: override gating (optional)
+- Default: only during diffusion UNet forward (scoped in `model_base.py`)
+
 ---
 
 ## Recent Success: Pure FP8 Quantization
