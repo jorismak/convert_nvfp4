@@ -416,24 +416,36 @@ def _pct_key(pct: float) -> str:
 
 
 def _load_summary_scales(
-    path: str, percentile: float, multiplier: float
+    path: str, percentile: float, multiplier: float, clip: float
 ) -> Dict[str, float]:
     summary = json.loads(Path(path).read_text(encoding="utf-8"))
-    key = f"scale_p{_pct_key(percentile)}"
+    pct_key = _pct_key(percentile)
+    channel_key = f"channel_amax_p{pct_key}"
+    global_key = f"global_amax_p{pct_key}"
     out: Dict[str, float] = {}
     for row in summary.get("layers", []):
         layer = row.get("layer")
         if not layer:
             continue
-        if key in row:
-            val = float(row[key])
+        if channel_key in row and isinstance(row[channel_key], list):
+            vals = [float(v) for v in row[channel_key] if v is not None]
+            if not vals:
+                continue
+            amax = sum(vals) / len(vals)
+            scale = amax / (F8_E4M3_MAX * clip)
+        elif global_key in row:
+            amax = float(row[global_key])
+            scale = amax / (F8_E4M3_MAX * clip)
+        elif "global_amax_max" in row:
+            amax = float(row["global_amax_max"])
+            scale = amax / (F8_E4M3_MAX * clip)
         elif "scale_max" in row:
-            val = float(row["scale_max"])
+            scale = float(row["scale_max"])
         elif "scale_mean" in row:
-            val = float(row["scale_mean"])
+            scale = float(row["scale_mean"])
         else:
             continue
-        out[layer] = val * multiplier
+        out[layer] = scale * multiplier
     return out
 
 
@@ -505,6 +517,12 @@ def main() -> None:
         help="Multiplier for summary-derived input_scale values (default: 1.0)",
     )
     parser.add_argument(
+        "--input-scale-clip",
+        choices=["4", "6"],
+        default="6",
+        help="Activation clip max for input_scale (4 or 6, default: 6)",
+    )
+    parser.add_argument(
         "--samples",
         type=int,
         default=6,
@@ -567,6 +585,7 @@ def main() -> None:
             args.input_scale_summary_json,
             args.input_scale_summary_percentile,
             args.input_scale_summary_multiplier,
+            float(args.input_scale_clip),
         )
         if input_scale_map:
             vals = list(input_scale_map.values())
