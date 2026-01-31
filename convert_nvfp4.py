@@ -1684,7 +1684,7 @@ def convert_to_nvfp4(
     input_scale_summary_multiplier: float = 1.0,
     input_scale_clip: str = "6",
     smoothquant: bool = False,
-    smoothquant_alpha: float = 0.5,
+    smoothquant_alpha: float = 0.8,
     input_scale_summary_fp16_std: bool = False,
     input_scale_summary_std_threshold: Optional[float] = None,
     input_scale_summary_cv_threshold: Optional[float] = 0.4,
@@ -3375,8 +3375,8 @@ Supported models:
     summary_group.add_argument(
         "--smoothquant-alpha",
         type=float,
-        default=0.5,
-        help="SmoothQuant alpha (0..1, default: 0.5)",
+        default=0.8,
+        help="SmoothQuant alpha (0..1, default: 0.8)",
     )
     summary_group.add_argument(
         "--input-scale-summary-fp16-std",
