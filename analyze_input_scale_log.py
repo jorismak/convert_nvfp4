@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Dict, List, TextIO
 
 import torch
+import msgpack
 
 try:
     import matplotlib.pyplot as plt
@@ -155,6 +156,13 @@ def _iter_torch_records(path: Path):
             yield record
 
 
+def _iter_msgpack_records(path: Path):
+    with path.open("rb") as f:
+        unpacker = msgpack.Unpacker(f, raw=False)
+        for record in unpacker:
+            yield record
+
+
 def _write_csv(path: Path, rows: List[Dict[str, object]], fields: List[str]) -> None:
     lines = [",".join(fields)]
     for row in rows:
@@ -209,9 +217,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--input-format",
-        choices=["torch", "text"],
-        default="torch",
-        help="Log input format (default: torch). Use 'text' for legacy tab logs.",
+        choices=["torch", "text", "msgpack"],
+        default="msgpack",
+        help="Log input format (default: msgpack). Use 'text' for legacy tab logs.",
     )
     parser.add_argument("--csv", help="Output CSV path (optional)")
     parser.add_argument("--json", required=True, help="Output JSON path")
@@ -264,7 +272,86 @@ def main() -> None:
     rows: List[Dict[str, object]] = []
     channel_axis = -1
 
-    if args.input_format == "torch":
+    if args.input_format == "msgpack":
+        channel_by_layer: Dict[str, List[torch.Tensor]] = defaultdict(list)
+        global_by_layer: Dict[str, List[float]] = defaultdict(list)
+
+        for record in _iter_msgpack_records(input_path):
+            if not isinstance(record, dict):
+                continue
+            fmt = record.get("format", "unknown")
+            mode = record.get("mode", "unknown")
+            if args.format != "all" and fmt != args.format:
+                continue
+            if args.mode != "all" and mode != args.mode:
+                continue
+            layer = record.get("layer")
+            if not layer:
+                continue
+            per_channel_bytes = record.get("per_channel_amax")
+            per_channel_len = record.get("per_channel_len")
+            if not isinstance(per_channel_bytes, (bytes, bytearray)) or not isinstance(per_channel_len, int):
+                continue
+            per_channel = torch.frombuffer(per_channel_bytes, dtype=torch.float32)
+            if per_channel.numel() != per_channel_len:
+                continue
+            per_channel = per_channel.clone()
+
+            channel_by_layer[layer].append(per_channel)
+
+            global_val = record.get("global_amax")
+            if global_val is None:
+                global_val = float(per_channel.max().item())
+            global_by_layer[layer].append(float(global_val))
+
+            if "channel_axis" in record:
+                try:
+                    channel_axis = int(record.get("channel_axis", channel_axis))
+                except Exception:
+                    pass
+
+        for layer in sorted(channel_by_layer.keys()):
+            channel_stack = torch.stack(channel_by_layer[layer], dim=0)
+            count = int(channel_stack.shape[0])
+
+            channel_mean = channel_stack.mean(dim=0)
+            if count > 1:
+                channel_std = channel_stack.std(dim=0, unbiased=False)
+            else:
+                channel_std = torch.zeros_like(channel_mean)
+            channel_max = channel_stack.max(dim=0).values
+
+            row: Dict[str, object] = {
+                "layer": layer,
+                "count": count,
+                "channel_axis": channel_axis,
+                "channel_amax_mean": channel_mean.tolist(),
+                "channel_amax_std": channel_std.tolist(),
+                "channel_amax_max": channel_max.tolist(),
+            }
+
+            for pct in args.percentiles:
+                q = torch.quantile(channel_stack, pct / 100.0, dim=0)
+                row[f"channel_amax_p{_pct_key(pct)}"] = q.tolist()
+
+            global_vals = sorted(global_by_layer.get(layer, []))
+            if global_vals:
+                row.update(
+                    {
+                        "global_amax_min": global_vals[0],
+                        "global_amax_max": global_vals[-1],
+                        "global_amax_mean": sum(global_vals) / len(global_vals),
+                        "global_amax_std": _stddev(global_vals),
+                        "global_amax_kurtosis": _kurtosis(global_vals),
+                        "global_amax_outlier_frac_3std": _outlier_frac(global_vals, 3.0),
+                    }
+                )
+                for pct in args.percentiles:
+                    row[f"global_amax_p{_pct_key(pct)}"] = _percentile(global_vals, pct)
+
+            rows.append(row)
+
+    elif args.input_format == "torch":
         channel_by_layer: Dict[str, List[torch.Tensor]] = defaultdict(list)
         global_by_layer: Dict[str, List[float]] = defaultdict(list)
 

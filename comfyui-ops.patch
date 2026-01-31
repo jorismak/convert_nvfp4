@@ -16,10 +16,10 @@ index 66e52864..4bb69bc0 100644
              model_output, _ = utils.pack_latents(model_output)
  
 diff --git a/comfy/ops.py b/comfy/ops.py
-index e406ba7e..78eabb9b 100644
+index e406ba7e..9984959d 100644
 --- a/comfy/ops.py
 +++ b/comfy/ops.py
-@@ -18,9 +18,21 @@
+@@ -18,12 +18,82 @@
  
  import torch
  import logging
@@ -41,7 +41,96 @@ index e406ba7e..78eabb9b 100644
  import comfy.rmsnorm
  import json
  
-@@ -545,6 +557,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
++
++def _nfp4_log_input_scale(input_tensor, scale, layer=None, quant_format=None) -> None:
++    if not get_nfp4_log_enabled():
++        return
++
++    log_path = os.getenv("COMFY_NFP4_LOG_INPUT_SCALE_PATH", "")
++    if not log_path:
++        return
++
++    try:
++        try:
++            import msgpack
++        except Exception:
++            return
++
++        input_shape = input_tensor.shape
++        input_reshaped = input_tensor.reshape(-1, input_shape[2]) if input_tensor.ndim == 3 else input_tensor
++        if input_reshaped.ndim != 2:
++            return
++
++        abs_input = input_reshaped.detach().abs()
++        if abs_input.dim() > 1:
++            reduce_dims = tuple(range(abs_input.dim() - 1))
++            per_channel = abs_input.amax(dim=reduce_dims)
++        else:
++            per_channel = abs_input
++
++        if scale is None:
++            scale_val = None
++            mode = "dynamic"
++        else:
++            try:
++                scale_val = float(scale.item())
++            except Exception:
++                scale_val = float(scale.mean().item())
++            mode = "provided"
++
++        per_channel_cpu = per_channel.to(dtype=torch.float32, device="cpu")
++        per_channel_bytes = per_channel_cpu.numpy().tobytes()
++
++        record = {
++            "format": quant_format or "unknown",
++            "mode": mode,
++            "layer": layer or "<unknown>",
++            "shape": tuple(input_reshaped.shape),
++            "global_amax": float(abs_input.max().item()),
++            "per_channel_dtype": "float32",
++            "per_channel_len": int(per_channel_cpu.numel()),
++            "per_channel_amax": per_channel_bytes,
++            "input_scale": scale_val,
++            "channel_axis": -1,
++        }
++        packed = msgpack.packb(record, use_bin_type=True)
++        with open(log_path, "ab") as f:
++            f.write(packed)
++    except Exception:
++        pass
++
+ def run_every_op():
+     if torch.compiler.is_compiling():
+         return
+@@ -160,6 +230,13 @@ class disable_weight_init:
+ 
+         def forward(self, *args, **kwargs):
+             run_every_op()
++            if len(args) > 0:
++                _nfp4_log_input_scale(
++                    args[0],
++                    None,
++                    layer=getattr(self, "_quant_layer_name", None),
++                    quant_format=getattr(self, "quant_format", None),
++                )
+             if self.comfy_cast_weights or len(self.weight_function) > 0 or len(self.bias_function) > 0:
+                 return self.forward_comfy_cast_weights(*args, **kwargs)
+             else:
+@@ -481,6 +558,13 @@ if CUBLAS_IS_AVAILABLE:
+                 return super().forward(input)
+ 
+             def forward(self, *args, **kwargs):
++                if len(args) > 0:
++                    _nfp4_log_input_scale(
++                        args[0],
++                        None,
++                        layer=getattr(self, "_quant_layer_name", None),
++                        quant_format=getattr(self, "quant_format", None),
++                    )
+                 return super().forward(*args, **kwargs)
+ 
+ 
+@@ -545,6 +629,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
  
                  device = self.factory_kwargs["device"]
                  layer_name = prefix.rstrip('.')
@@ -49,7 +138,7 @@ index e406ba7e..78eabb9b 100644
                  weight_key = f"{prefix}weight"
                  weight = state_dict.pop(weight_key, None)
                  if weight is None:
-@@ -667,14 +680,54 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
+@@ -667,14 +752,25 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
                  input_shape = input.shape
                  reshaped_3d = False
  
@@ -60,41 +149,12 @@ index e406ba7e..78eabb9b 100644
 +                    scale = getattr(self, 'input_scale', None)
 +                    if scale is not None:
 +                        scale = comfy.model_management.cast_to_device(scale, input.device, None)
-+                    log_path = os.getenv("COMFY_NFP4_LOG_INPUT_SCALE_PATH", "")
-+                    log_always = os.getenv("COMFY_NFP4_LOG_ALWAYS", "")
-+                    if log_path and (log_always or get_nfp4_log_enabled()):
-+                        try:
-+                            layer = getattr(self, "_quant_layer_name", "<unknown>")
-+                            fmt = getattr(self, "quant_format", "unknown")
-+                            mode = "provided" if scale is not None else "dynamic"
-+                            abs_input = input_reshaped.detach().abs()
-+                            if abs_input.dim() > 1:
-+                                reduce_dims = tuple(range(abs_input.dim() - 1))
-+                                per_channel = abs_input.amax(dim=reduce_dims)
-+                            else:
-+                                per_channel = abs_input
-+                            if scale is None:
-+                                scale_val = None
-+                            else:
-+                                try:
-+                                    scale_val = float(scale.item())
-+                                except Exception:
-+                                    scale_val = float(scale.mean().item())
-+
-+                            record = {
-+                                "format": fmt,
-+                                "mode": mode,
-+                                "layer": layer,
-+                                "shape": tuple(input_reshaped.shape),
-+                                "global_amax": float(abs_input.max().item()),
-+                                "per_channel_amax": per_channel.to(dtype=torch.float32, device="cpu"),
-+                                "input_scale": scale_val,
-+                                "channel_axis": -1,
-+                            }
-+                            with open(log_path, "ab") as f:
-+                                torch.save(record, f)
-+                        except Exception:
-+                            pass
++                    _nfp4_log_input_scale(
++                        input_reshaped,
++                        scale,
++                        layer=getattr(self, "_quant_layer_name", None),
++                        quant_format=getattr(self, "quant_format", None),
++                    )
 +
                  if (getattr(self, 'layout_type', None) is not None and
                      not isinstance(input, QuantizedTensor) and not self._full_precision_mm and
